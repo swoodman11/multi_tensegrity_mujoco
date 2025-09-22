@@ -1,0 +1,529 @@
+<mujoco model="TT (v1.31)">
+  <compiler angle="radian"/>
+
+  <option timestep="0.01" cone="elliptic">
+    <flag frictionloss="disable"/>
+  </option>
+
+  <visual>
+    <global offwidth="1280" offheight="1280"/>
+    <quality shadowsize="2048"/>
+    <headlight ambient="0.4 0.4 0.4" diffuse="0.8 0.8 0.8" specular="0.1 0.1 0.1"/>
+  </visual>
+
+  <default>
+    <geom size="0.014 0 0" condim="6" friction="1.2 0 0" solref="-5000 -50" rgba="0.75 0.75 0.75 1"/>
+    <site size="0.02 0.005 0.005"/>
+
+    <tendon stiffness="100000" damping="1000" springlength="1.5" width="0.005" rgba="1 1 1 0.5"/>
+    <general ctrlrange="-100 0" dyntype="filter" gainprm="15000"/>
+  </default>
+
+  <asset>
+    <texture type="skybox" colorspace="auto" name="skybox" builtin="gradient" mark="random" rgb1="0.4 0.6 0.8" rgb2="0 0 0" markrgb="1 1 1" width="800" height="4800"/>
+    <texture type="2d" colorspace="auto" name="grid" builtin="checker" mark="edge" rgb1="0.1 0.2 0.3" rgb2="0.2 0.3 0.4" markrgb="0.2 0.3 0.4" width="300" height="300"/>
+    <texture type="skybox" colorspace="auto" builtin="gradient" rgb1="1 1 1" rgb2="0 0 0" width="100" height="600"/>
+    <texture type="cube" colorspace="auto" name="texgeom" builtin="flat" mark="cross" rgb1="0.8 0.6 0.4" rgb2="0.8 0.6 0.4" markrgb="1 1 1" width="127" height="762"/>
+    <texture type="2d" colorspace="auto" name="texplane" builtin="checker" rgb1="0 0 0" rgb2="0.8 0.8 0.8" width="100" height="100"/>
+    <material name="grid" texture="grid" texuniform="true"/>
+    <material name="self" rgba="0.7 0.5 0.3 1"/>
+    <material name="self_default" rgba="0.7 0.5 0.3 1"/>
+    <material name="self_highlight" rgba="0 0.5 0.3 1"/>
+    <material name="effector" rgba="0.7 0.4 0.2 1"/>
+    <material name="effector_default" rgba="0.7 0.4 0.2 1"/>
+    <material name="effector_highlight" rgba="0 0.5 0.3 1"/>
+    <material name="decoration" rgba="0.3 0.5 0.7 1"/>
+    <material name="eye" rgba="0 0.2 1 1"/>
+    <material name="target" rgba="0.6 0.3 0.3 1"/>
+    <material name="target_default" rgba="0.6 0.3 0.3 1"/>
+    <material name="target_highlight" rgba="0.6 0.3 0.3 0.4"/>
+    <material name="site" rgba="0.5 0.5 0.5 0.3"/>
+    <material name="MatPlane" texture="texplane" texrepeat="30 30"/>
+    <material name="geom" texture="texgeom" texuniform="true"/>
+  </asset>
+
+  <worldbody>
+    <geom name="floor" size="40 40 1" type="plane" material="grid" rgba="0.8 0.9 0.8 1"/>
+    <camera name="camera" pos="-1.707 -9.267 38.018" quat="0.992382 0.109445 -0.00620097 -0.0562269"/>
+    <camera name="front" pos="10.257 -19.949 12.477" xyaxes="0.886 0.463 0.000 -0.225 0.430 0.875"/>
+    <camera name="top" pos="0.392 -0.869 53.543" quat="0.999964 0.00849908 0 0"/>
+    <light name="mylight" pos="0 0 6" dir="0 0 -1"/>
+
+    <body name="t1_r01" pos="-1.063521 0.5686207 1.4399507" quat="0.811427 0.365542 -0.4552025 -0.0274943">
+      <joint name="t1_move01" type="free"/>
+      <geom name="t1_r01" size="0.0159 1.475" quat="1.02961e-09 -0.933251 0.359226 -9.46508e-10" type="cylinder" mass="6.5" rgba="1 1 1 1"/>
+      <geom name="t1_s0" size="0.175" pos="3.69691e-09 1.83157e-09 -1.475" quat="0.815045 -0.454598 0.174983 0.313726" mass="15.1" rgba="1 0 0 0.5"/>
+      <geom name="t1_s1" size="0.175" pos="-3.69691e-09 -1.83157e-09 1.475" quat="0.815045 -0.454598 0.174983 0.313726" mass="15.1" rgba="1 0 0 1"/>
+      <geom name="t1_h01" size="0.075 0.715" quat="1.19879e-09 -0.933251 0.359226 3.09137e-09" type="cylinder" mass="90" rgba="0.1 0.1 0.1 1"/>
+      <geom name="t1_b0" size="0.2 0.275" pos="-9.50917e-10 -1.3377e-09 -1.039" quat="2.96872e-09 -0.933251 0.359226 -2.79146e-09" type="cylinder" mass="58.1" rgba="0 0 0 1"/>
+      <geom name="t1_b1" size="0.2 0.275" pos="9.50917e-10 1.3377e-09 1.039" quat="2.96872e-09 -0.933251 0.359226 -2.79146e-09" type="cylinder" mass="58.1" rgba="0 0 0 1"/>
+      <site name="t1_s0" pos="3.69691e-09 1.83157e-09 -1.475" quat="0.815045 -0.454598 0.174983 0.313726" size="0.001" rgba="0 0 1 1"/>
+      <site name="t1_s1" pos="-3.69691e-09 -1.83157e-09 1.475" quat="0.815045 -0.454598 0.174983 0.313726" size="0.001" rgba="0 0 1 1"/>
+      <site name="t1_s_0_4" pos="0.0701671 0.160317 -1.475" quat="0.815045 -0.454598 0.174983 0.313726" rgba="0 0 0 1"/>
+      <site name="t1_s_0_3" pos="0.160317 -0.0701671 -1.475" quat="0.815045 -0.454598 0.174983 0.313726" rgba="0 0 0 1"/>
+      <site name="t1_s_0_2" pos="-0.0701671 -0.160317 -1.475" quat="0.815045 -0.454598 0.174983 0.313726" rgba="0 0 0 1"/>
+      <site name="t1_s_0_b2" pos="-0.160317 0.0701671 -1.475" quat="0.815045 -0.454598 0.174983 0.313726" rgba="0 0 0 1"/>
+      <site name="t1_s_b0_4" pos="0.0107106 0.174672 -1.25" quat="0.815045 -0.454598 0.174983 0.313726" rgba="0 0 0 1"/>
+      <site name="t1_s_1_4" pos="-0.0783518 0.15648 1.475" quat="0.815045 -0.454598 0.174983 0.313726" rgba="0 0 0 1"/>
+      <site name="t1_s_1_3" pos="0.15648 0.0783518 1.475" quat="0.815045 -0.454598 0.174983 0.313726" rgba="0 0 0 1"/>
+      <site name="t1_s_1_b3" pos="0.0783518 -0.15648 1.475" quat="0.815045 -0.454598 0.174983 0.313726" rgba="0 0 0 1"/>
+      <site name="t1_s_1_5" pos="-0.15648 -0.0783518 1.475" quat="0.815045 -0.454598 0.174983 0.313726" rgba="0 0 0 1"/>
+      <site name="t1_s_b1_5" pos="-0.119125 -0.128196 1.25" quat="0.815045 -0.454598 0.174983 0.313726" rgba="0 0 0 1"/>
+    </body>
+
+    <body name="t1_r23" pos="-1.0159419 0.5331617 0.9333615" quat="0.704862 0.5016129 -0.0093226 0.5014651">
+      <joint name="t1_move23" type="free"/>
+      <geom name="t1_r23" size="0.0159 1.475" quat="-4.35483e-10 -0.967935 -0.251202 -5.83827e-10" type="cylinder" mass="6.5" rgba="1 1 1 1"/>
+      <geom name="t1_s2" size="0.175" pos="1.98978e-09 -8.1084e-10 -1.475" quat="0.75122 -0.610382 -0.158409 -0.194959" mass="15.1" rgba="0 1 0 0.5"/>
+      <geom name="t1_s3" size="0.175" pos="-1.98978e-09 8.1084e-10 1.475" quat="0.75122 -0.610382 -0.158409 -0.194959" mass="15.1" rgba="0 1 0 1"/>
+      <geom name="t1_h23" size="0.075 0.715" quat="-1.43979e-09 -0.967935 -0.251202 2.94687e-09" type="cylinder" mass="90" rgba="0.1 0.1 0.1 1"/>
+      <geom name="t1_b2" size="0.2 0.275" pos="-1.91631e-10 9.22312e-10 -1.039" quat="-2.39459e-09 -0.967935 -0.251202 -5.21693e-10" type="cylinder" mass="58.1" rgba="0 0 0 1"/>
+      <geom name="t1_b3" size="0.2 0.275" pos="1.91631e-10 -9.22312e-10 1.039" quat="-2.39459e-09 -0.967935 -0.251202 -5.21693e-10" type="cylinder" mass="58.1" rgba="0 0 0 1"/>
+      <site name="t1_s2" pos="1.98978e-09 -8.1084e-10 -1.475" quat="0.75122 -0.610382 -0.158409 -0.194959" size="0.001" rgba="0 1 0 1"/>
+      <site name="t1_s3" pos="-1.98978e-09 8.1084e-10 1.475" quat="0.75122 -0.610382 -0.158409 -0.194959" size="0.001" rgba="0 1 0 1"/>
+      <site name="t1_s_2_4" pos="-0.0850506 0.152942 -1.475" quat="0.75122 -0.610382 -0.158409 -0.194959" rgba="0 0 0 1"/>
+      <site name="t1_s_2_b4" pos="0.152942 0.0850506 -1.475" quat="0.75122 -0.610382 -0.158409 -0.194959" rgba="0 0 0 1"/>
+      <site name="t1_s_2_0" pos="0.0850506 -0.152942 -1.475" quat="0.75122 -0.610382 -0.158409 -0.194959" rgba="0 0 0 1"/>
+      <site name="t1_s_b2_0" pos="0.123401 -0.124085 -1.25" quat="0.75122 -0.610382 -0.158409 -0.194959" rgba="0 0 0 1"/>
+      <site name="t1_s_2_5" pos="-0.152942 -0.0850506 -1.475" quat="0.75122 -0.610382 -0.158409 -0.194959" rgba="0 0 0 1"/>
+      <site name="t1_s_3_1" pos="0.0472796 0.168492 1.475" quat="0.75122 -0.610382 -0.158409 -0.194959" rgba="0 0 0 1"/>
+      <site name="t1_s_b3_1" pos="-0.0343533 0.171595 1.25" quat="0.75122 -0.610382 -0.158409 -0.194959" rgba="0 0 0 1"/>
+      <site name="t1_s_3_0" pos="0.168492 -0.0472796 1.475" quat="0.75122 -0.610382 -0.158409 -0.194959" rgba="0 0 0 1"/>
+      <site name="t1_s_3_5" pos="-0.0472796 -0.168492 1.475" quat="0.75122 -0.610382 -0.158409 -0.194959" rgba="0 0 0 1"/>
+      <site name="t1_s_3_b5" pos="-0.168492 0.0472796 1.475" quat="0.75122 -0.610382 -0.158409 -0.194959" rgba="0 0 0 1"/>
+    </body>
+    <body name="t1_r45" pos="-1.4870355 0.5757972 1.1645339" quat="0.177383 0.4134729 -0.8152177 0.3646855">
+      <joint name="t1_move45" type="free"/>
+      <geom name="t1_r45" size="0.0159 1.475" quat="1.95914e-11 -0.622854 0.782338 -9.94874e-10" type="cylinder" mass="6.5" rgba="1 1 1 1"/>
+      <geom name="t1_s4" size="0.175" pos="1.87322e-09 -2.26007e-09 -1.475" quat="0.464921 -0.532774 0.669192 -0.228434" mass="15.1" rgba="0 0 1 0.5"/>
+      <geom name="t1_s5" size="0.175" pos="-1.87322e-09 2.26007e-09 1.475" quat="0.464921 -0.532774 0.669192 -0.228434" mass="15.1" rgba="0 0 1 1"/>
+      <geom name="t1_h45" size="0.075 0.715" quat="4.74452e-10 -0.622854 0.782338 -2.08275e-09" type="cylinder" mass="90" rgba="0.1 0.1 0.1 1"/>
+      <geom name="t1_b4" size="0.2 0.275" pos="-1.03465e-09 1.12983e-09 -1.039" quat="-1.25256e-09 -0.622854 0.782338 5.36179e-09" type="cylinder" mass="58.1" rgba="0 0 0 1"/>
+      <geom name="t1_b5" size="0.2 0.275" pos="1.03465e-09 -1.12983e-09 1.039" quat="-1.25256e-09 -0.622854 0.782338 5.36179e-09" type="cylinder" mass="58.1" rgba="0 0 0 1"/>
+      <site name="t1_s4" pos="1.87322e-09 -2.26007e-09 -1.475" quat="0.464921 -0.532774 0.669192 -0.228434" size="0.001" rgba="1 0 0 1"/>
+      <site name="t1_s5" pos="-1.87322e-09 2.26007e-09 1.475" quat="0.464921 -0.532774 0.669192 -0.228434" size="0.001" rgba="1 0 0 1"/>
+      <site name="t1_s_4_1" pos="0.166088 0.0551331 -1.475" quat="0.464921 -0.532774 0.669192 -0.228434" rgba="0 0 0 1"/>
+      <site name="t1_s_4_0" pos="0.0551331 -0.166088 -1.475" quat="0.464921 -0.532774 0.669192 -0.228434" rgba="0 0 0 1"/>
+      <site name="t1_s_4_2" pos="-0.0551331 0.166088 -1.475" quat="0.464921 -0.532774 0.669192 -0.228434" rgba="0 0 0 1"/>
+      <site name="t1_s_b4_2" pos="-0.0910059 0.149476 -1.25" quat="0.464921 -0.532774 0.669192 -0.228434" rgba="0 0 0 1"/>
+      <site name="t1_s_4_b0" pos="-0.166088 -0.0551331 -1.475" quat="0.464921 -0.532774 0.669192 -0.228434" rgba="0 0 0 1"/>
+      <site name="t1_s_5_1" pos="0.0855044 0.152689 1.475" quat="0.464921 -0.532774 0.669192 -0.228434" rgba="0 0 0 1"/>
+      <site name="t1_s_5_b1" pos="0.152689 -0.0855044 1.475" quat="0.464921 -0.532774 0.669192 -0.228434" rgba="0 0 0 1"/>
+      <site name="t1_s_5_3" pos="-0.0855044 -0.152689 1.475" quat="0.464921 -0.532774 0.669192 -0.228434" rgba="1 1 1 1"/>
+      <site name="t1_s_b5_3" pos="-0.022702 -0.173521 1.25" quat="0.464921 -0.532774 0.669192 -0.228434" rgba="0 0 0 1"/>
+      <site name="t1_s_5_2" pos="-0.152689 0.0855044 1.475" quat="0.464921 -0.532774 0.669192 -0.228434" rgba="0 0 0 1"/>
+    </body>
+    <body name="t2_r01" pos="-0.3877848 2.591109 1.0856365" quat="0.8613888 0.3800969 -0.2148207 -0.2595915">
+      <joint name="t2_move01" type="free"/>
+      <geom name="t2_r01" size="0.0159 1.475" quat="1.02961e-09 -0.933251 0.359226 -9.46508e-10" type="cylinder" mass="6.5" rgba="1 1 1 1"/>
+      <geom name="t2_s0" size="0.175" pos="3.69691e-09 1.83157e-09 -1.475" quat="0.815045 -0.454598 0.174983 0.313726" mass="15.1" rgba="1 0 0 0.5"/>
+      <geom name="t2_s1" size="0.175" pos="-3.69691e-09 -1.83157e-09 1.475" quat="0.815045 -0.454598 0.174983 0.313726" mass="15.1" rgba="1 0 0 1"/>
+      <geom name="t2_h01" size="0.075 0.715" quat="1.19879e-09 -0.933251 0.359226 3.09137e-09" type="cylinder" mass="90" rgba="0.1 0.1 0.1 1"/>
+      <geom name="t2_b0" size="0.2 0.275" pos="-9.50917e-10 -1.3377e-09 -1.039" quat="2.96872e-09 -0.933251 0.359226 -2.79146e-09" type="cylinder" mass="58.1" rgba="0 0 0 1"/>
+      <geom name="t2_b1" size="0.2 0.275" pos="9.50917e-10 1.3377e-09 1.039" quat="2.96872e-09 -0.933251 0.359226 -2.79146e-09" type="cylinder" mass="58.1" rgba="0 0 0 1"/>
+      <site name="t2_s0" pos="3.69691e-09 1.83157e-09 -1.475" quat="0.815045 -0.454598 0.174983 0.313726" size="0.001" rgba="0 0 1 1"/>
+      <site name="t2_s1" pos="-3.69691e-09 -1.83157e-09 1.475" quat="0.815045 -0.454598 0.174983 0.313726" size="0.001" rgba="0 0 1 1"/>
+      <site name="t2_s_0_4" pos="0.0701671 0.160317 -1.475" quat="0.815045 -0.454598 0.174983 0.313726" rgba="0 0 0 1"/>
+      <site name="t2_s_0_3" pos="0.160317 -0.0701671 -1.475" quat="0.815045 -0.454598 0.174983 0.313726" rgba="0 0 0 1"/>
+      <site name="t2_s_0_2" pos="-0.0701671 -0.160317 -1.475" quat="0.815045 -0.454598 0.174983 0.313726" rgba="0 0 0 1"/>
+      <site name="t2_s_0_b2" pos="-0.160317 0.0701671 -1.475" quat="0.815045 -0.454598 0.174983 0.313726" rgba="0 0 0 1"/>
+      <site name="t2_s_b0_4" pos="0.0107106 0.174672 -1.25" quat="0.815045 -0.454598 0.174983 0.313726" rgba="0 0 0 1"/>
+      <site name="t2_s_1_4" pos="-0.0783518 0.15648 1.475" quat="0.815045 -0.454598 0.174983 0.313726" rgba="0 0 0 1"/>
+      <site name="t2_s_1_3" pos="0.15648 0.0783518 1.475" quat="0.815045 -0.454598 0.174983 0.313726" rgba="0 0 0 1"/>
+      <site name="t2_s_1_b3" pos="0.0783518 -0.15648 1.475" quat="0.815045 -0.454598 0.174983 0.313726" rgba="0 0 0 1"/>
+      <site name="t2_s_1_5" pos="-0.15648 -0.0783518 1.475" quat="0.815045 -0.454598 0.174983 0.313726" rgba="0 0 0 1"/>
+      <site name="t2_s_b1_5" pos="-0.119125 -0.128196 1.25" quat="0.815045 -0.454598 0.174983 0.313726" rgba="0 0 0 1"/>
+    </body>
+    <body name="t2_r23" pos="-0.6591613 2.6710632 0.6060977" quat="0.6631789 0.6954331 0.105096 0.2559713">
+      <joint name="t2_move23" type="free"/>
+      <geom name="t2_r23" size="0.0159 1.475" quat="-4.35483e-10 -0.967935 -0.251202 -5.83827e-10" type="cylinder" mass="6.5" rgba="1 1 1 1"/>
+      <geom name="t2_s2" size="0.175" pos="1.98978e-09 -8.1084e-10 -1.475" quat="0.75122 -0.610382 -0.158409 -0.194959" mass="15.1" rgba="0 1 0 0.5"/>
+      <geom name="t2_s3" size="0.175" pos="-1.98978e-09 8.1084e-10 1.475" quat="0.75122 -0.610382 -0.158409 -0.194959" mass="15.1" rgba="0 1 0 1"/>
+      <geom name="t2_h23" size="0.075 0.715" quat="-1.43979e-09 -0.967935 -0.251202 2.94687e-09" type="cylinder" mass="90" rgba="0.1 0.1 0.1 1"/>
+      <geom name="t2_b2" size="0.2 0.275" pos="-1.91631e-10 9.22312e-10 -1.039" quat="-2.39459e-09 -0.967935 -0.251202 -5.21693e-10" type="cylinder" mass="58.1" rgba="0 0 0 1"/>
+      <geom name="t2_b3" size="0.2 0.275" pos="1.91631e-10 -9.22312e-10 1.039" quat="-2.39459e-09 -0.967935 -0.251202 -5.21693e-10" type="cylinder" mass="58.1" rgba="0 0 0 1"/>
+      <site name="t2_s2" pos="1.98978e-09 -8.1084e-10 -1.475" quat="0.75122 -0.610382 -0.158409 -0.194959" size="0.001" rgba="0 1 0 1"/>
+      <site name="t2_s3" pos="-1.98978e-09 8.1084e-10 1.475" quat="0.75122 -0.610382 -0.158409 -0.194959" size="0.001" rgba="0 1 0 1"/>
+      <site name="t2_s_2_4" pos="-0.0850506 0.152942 -1.475" quat="0.75122 -0.610382 -0.158409 -0.194959" rgba="0 0 0 1"/>
+      <site name="t2_s_2_b4" pos="0.152942 0.0850506 -1.475" quat="0.75122 -0.610382 -0.158409 -0.194959" rgba="0 0 0 1"/>
+      <site name="t2_s_2_0" pos="0.0850506 -0.152942 -1.475" quat="0.75122 -0.610382 -0.158409 -0.194959" rgba="0 0 0 1"/>
+      <site name="t2_s_b2_0" pos="0.123401 -0.124085 -1.25" quat="0.75122 -0.610382 -0.158409 -0.194959" rgba="0 0 0 1"/>
+      <site name="t2_s_2_5" pos="-0.152942 -0.0850506 -1.475" quat="0.75122 -0.610382 -0.158409 -0.194959" rgba="0 0 0 1"/>
+      <site name="t2_s_3_1" pos="0.0472796 0.168492 1.475" quat="0.75122 -0.610382 -0.158409 -0.194959" rgba="0 0 0 1"/>
+      <site name="t2_s_b3_1" pos="-0.0343533 0.171595 1.25" quat="0.75122 -0.610382 -0.158409 -0.194959" rgba="0 0 0 1"/>
+      <site name="t2_s_3_0" pos="0.168492 -0.0472796 1.475" quat="0.75122 -0.610382 -0.158409 -0.194959" rgba="0 0 0 1"/>
+      <site name="t2_s_3_5" pos="-0.0472796 -0.168492 1.475" quat="0.75122 -0.610382 -0.158409 -0.194959" rgba="0 0 0 1"/>
+      <site name="t2_s_3_b5" pos="-0.168492 0.0472796 1.475" quat="0.75122 -0.610382 -0.158409 -0.194959" rgba="0 0 0 1"/>
+    </body>
+    <body name="t2_r45" pos="-0.9024866 2.7534703 1.1102422" quat="0.4129638 0.46244 -0.7765708 0.1120177">
+      <joint name="t2_move45" type="free"/>
+      <geom name="t2_r45" size="0.0159 1.475" quat="1.95914e-11 -0.622854 0.782338 -9.94874e-10" type="cylinder" mass="6.5" rgba="1 1 1 1"/>
+      <geom name="t2_s4" size="0.175" pos="1.87322e-09 -2.26007e-09 -1.475" quat="0.464921 -0.532774 0.669192 -0.228434" mass="15.1" rgba="0 0 1 0.5"/>
+      <geom name="t2_s5" size="0.175" pos="-1.87322e-09 2.26007e-09 1.475" quat="0.464921 -0.532774 0.669192 -0.228434" mass="15.1" rgba="0 0 1 1"/>
+      <geom name="t2_h45" size="0.075 0.715" quat="4.74452e-10 -0.622854 0.782338 -2.08275e-09" type="cylinder" mass="90" rgba="0.1 0.1 0.1 1"/>
+      <geom name="t2_b4" size="0.2 0.275" pos="-1.03465e-09 1.12983e-09 -1.039" quat="-1.25256e-09 -0.622854 0.782338 5.36179e-09" type="cylinder" mass="58.1" rgba="0 0 0 1"/>
+      <geom name="t2_b5" size="0.2 0.275" pos="1.03465e-09 -1.12983e-09 1.039" quat="-1.25256e-09 -0.622854 0.782338 5.36179e-09" type="cylinder" mass="58.1" rgba="0 0 0 1"/>
+      <site name="t2_s4" pos="1.87322e-09 -2.26007e-09 -1.475" quat="0.464921 -0.532774 0.669192 -0.228434" size="0.001" rgba="1 0 0 1"/>
+      <site name="t2_s5" pos="-1.87322e-09 2.26007e-09 1.475" quat="0.464921 -0.532774 0.669192 -0.228434" size="0.001" rgba="1 0 0 1"/>
+      <site name="t2_s_4_1" pos="0.166088 0.0551331 -1.475" quat="0.464921 -0.532774 0.669192 -0.228434" rgba="0 0 0 1"/>
+      <site name="t2_s_4_0" pos="0.0551331 -0.166088 -1.475" quat="0.464921 -0.532774 0.669192 -0.228434" rgba="0 0 0 1"/>
+      <site name="t2_s_4_2" pos="-0.0551331 0.166088 -1.475" quat="0.464921 -0.532774 0.669192 -0.228434" rgba="0 0 0 1"/>
+      <site name="t2_s_b4_2" pos="-0.0910059 0.149476 -1.25" quat="0.464921 -0.532774 0.669192 -0.228434" rgba="0 0 0 1"/>
+      <site name="t2_s_4_b0" pos="-0.166088 -0.0551331 -1.475" quat="0.464921 -0.532774 0.669192 -0.228434" rgba="0 0 0 1"/>
+      <site name="t2_s_5_1" pos="0.0855044 0.152689 1.475" quat="0.464921 -0.532774 0.669192 -0.228434" rgba="0 0 0 1"/>
+      <site name="t2_s_5_b1" pos="0.152689 -0.0855044 1.475" quat="0.464921 -0.532774 0.669192 -0.228434" rgba="0 0 0 1"/>
+      <site name="t2_s_5_3" pos="-0.0855044 -0.152689 1.475" quat="0.464921 -0.532774 0.669192 -0.228434" rgba="1 1 1 1"/>
+      <site name="t2_s_b5_3" pos="-0.022702 -0.173521 1.25" quat="0.464921 -0.532774 0.669192 -0.228434" rgba="0 0 0 1"/>
+      <site name="t2_s_5_2" pos="-0.152689 0.0855044 1.475" quat="0.464921 -0.532774 0.669192 -0.228434" rgba="0 0 0 1"/>
+    </body>
+  </worldbody>
+
+  <tendon>
+    <spatial name="t1_td_0" rgba="0.6 0.6 0.6 0.5">
+      <site site="t1_s_3_b5"/>
+      <site site="t1_s_b5_3"/>
+    </spatial>
+    <spatial name="t1_td_1" rgba="0.6 0.6 0.6 0.5">
+      <site site="t1_s_1_b3"/>
+      <site site="t1_s_b3_1"/>
+    </spatial>
+    <spatial name="t1_td_2" rgba="0.6 0.6 0.6 0.5">
+      <site site="t1_s_5_b1"/>
+      <site site="t1_s_b1_5"/>
+    </spatial>
+    <spatial name="t1_td_3" rgba="0.6 0.6 0.6 0.5">
+      <site site="t1_s_0_b2"/>
+      <site site="t1_s_b2_0"/>
+    </spatial>
+    <spatial name="t1_td_4" rgba="0.6 0.6 0.6 0.5">
+      <site site="t1_s_4_b0"/>
+      <site site="t1_s_b0_4"/>
+    </spatial>
+    <spatial name="t1_td_5" rgba="0.6 0.6 0.6 0.5">
+      <site site="t1_s_2_b4"/>
+      <site site="t1_s_b4_2"/>
+    </spatial>
+    <spatial name="t1_td_6" stiffness="1000" springlength="0.65" width="0.025">
+      <site site="t1_s_3_5"/>
+      <site site="t1_s_5_3"/>
+    </spatial>
+    <spatial name="t1_td_7" stiffness="1000" springlength="0.65" width="0.025">
+      <site site="t1_s_1_3"/>
+      <site site="t1_s_3_1"/>
+    </spatial>
+    <spatial name="t1_td_8" stiffness="1000" springlength="0.65" width="0.025">
+      <site site="t1_s_1_5"/>
+      <site site="t1_s_5_1"/>
+    </spatial>
+    <spatial name="t1_td_9" stiffness="1000" springlength="0.65" width="0.025">
+      <site site="t1_s_0_2"/>
+      <site site="t1_s_2_0"/>
+    </spatial>
+    <spatial name="t1_td_10" stiffness="1000" springlength="0.65" width="0.025">
+      <site site="t1_s_0_4"/>
+      <site site="t1_s_4_0"/>
+    </spatial>
+    <spatial name="t1_td_11" stiffness="1000" springlength="0.65" width="0.025">
+      <site site="t1_s_2_4"/>
+      <site site="t1_s_4_2"/>
+    </spatial>
+    <spatial name="t1_td_12" stiffness="20000" springlength="1.3" width="0.025">
+      <site site="t1_s_2_5"/>
+      <site site="t1_s_5_2"/>
+    </spatial>
+    <spatial name="t1_td_13" stiffness="20000" springlength="1.3" width="0.025">
+      <site site="t1_s_0_3"/>
+      <site site="t1_s_3_0"/>
+    </spatial>
+    <spatial name="t1_td_14" stiffness="20000" springlength="1.3" width="0.025">
+      <site site="t1_s_1_4"/>
+      <site site="t1_s_4_1"/>
+    </spatial>
+    <spatial name="t2_td_0" rgba="0.6 0.6 0.6 0.5">
+      <site site="t2_s_3_b5"/>
+      <site site="t2_s_b5_3"/>
+    </spatial>
+    <spatial name="t2_td_1" rgba="0.6 0.6 0.6 0.5">
+      <site site="t2_s_1_b3"/>
+      <site site="t2_s_b3_1"/>
+    </spatial>
+    <spatial name="t2_td_2" rgba="0.6 0.6 0.6 0.5">
+      <site site="t2_s_5_b1"/>
+      <site site="t2_s_b1_5"/>
+    </spatial>
+    <spatial name="t2_td_3" rgba="0.6 0.6 0.6 0.5">
+      <site site="t2_s_0_b2"/>
+      <site site="t2_s_b2_0"/>
+    </spatial>
+    <spatial name="t2_td_4" rgba="0.6 0.6 0.6 0.5">
+      <site site="t2_s_4_b0"/>
+      <site site="t2_s_b0_4"/>
+    </spatial>
+    <spatial name="t2_td_5" rgba="0.6 0.6 0.6 0.5">
+      <site site="t2_s_2_b4"/>
+      <site site="t2_s_b4_2"/>
+    </spatial>
+    <spatial name="t2_td_6" stiffness="1000" springlength="0.65" width="0.025">
+      <site site="t2_s_3_5"/>
+      <site site="t2_s_5_3"/>
+    </spatial>
+    <spatial name="t2_td_7" stiffness="1000" springlength="0.65" width="0.025">
+      <site site="t2_s_1_3"/>
+      <site site="t2_s_3_1"/>
+    </spatial>
+    <spatial name="t2_td_8" stiffness="1000" springlength="0.65" width="0.025">
+      <site site="t2_s_1_5"/>
+      <site site="t2_s_5_1"/>
+    </spatial>
+    <spatial name="t2_td_9" stiffness="1000" springlength="0.65" width="0.025">
+      <site site="t2_s_0_2"/>
+      <site site="t2_s_2_0"/>
+    </spatial>
+    <spatial name="t2_td_10" stiffness="1000" springlength="0.65" width="0.025">
+      <site site="t2_s_0_4"/>
+      <site site="t2_s_4_0"/>
+    </spatial>
+    <spatial name="t2_td_11" stiffness="1000" springlength="0.65" width="0.025">
+      <site site="t2_s_2_4"/>
+      <site site="t2_s_4_2"/>
+    </spatial>
+    <spatial name="t2_td_12" stiffness="20000" springlength="1.3" width="0.025">
+      <site site="t2_s_2_5"/>
+      <site site="t2_s_5_2"/>
+    </spatial>
+    <spatial name="t2_td_13" stiffness="20000" springlength="1.3" width="0.025">
+      <site site="t2_s_0_3"/>
+      <site site="t2_s_3_0"/>
+    </spatial>
+    <spatial name="t2_td_14" stiffness="20000" springlength="1.3" width="0.025">
+      <site site="t2_s_1_4"/>
+      <site site="t2_s_4_1"/>
+    </spatial>
+
+<!--    <spatial name="connect0" stiffness="100000" springlength="0.3">-->
+<!--      <site site="t2_s1"/>-->
+<!--      <site site="t1_s4"/>-->
+<!--    </spatial>-->
+<!--    <spatial name="connect1" stiffness="100000" springlength="0.3">-->
+<!--      <site site="t2_s5"/>-->
+<!--      <site site="t1_s2"/>-->
+<!--    </spatial>-->
+<!--    <spatial name="connect2" stiffness="100000" springlength="0.3">-->
+<!--      <site site="t2_s3"/>-->
+<!--      <site site="t1_s0"/>-->
+<!--    </spatial>-->
+  </tendon>
+
+  <equality>
+    <weld body1="t1_r45" body2="t2_r01" anchor="0 0 0"/>
+    <weld body1="t1_r23" body2="t2_r45" anchor="0 0 0"/>
+    <weld body1="t1_r01" body2="t2_r23" anchor="0 0 0"/>
+  </equality>
+
+  <sensor>
+    <framepos objtype="site" objname="t1_s0" name="pos_t1_s0"/>
+    <framepos objtype="site" objname="t1_s1" name="pos_t1_s1"/>
+    <framepos objtype="site" objname="t1_s2" name="pos_t1_s2"/>
+    <framepos objtype="site" objname="t1_s3" name="pos_t1_s3"/>
+    <framepos objtype="site" objname="t1_s4" name="pos_t1_s4"/>
+    <framepos objtype="site" objname="t1_s5" name="pos_t1_s5"/>
+    <framepos objtype="site" objname="t1_s_0_4" name="pos_t1_s_0_4"/>
+    <framepos objtype="site" objname="t1_s_0_3" name="pos_t1_s_0_3"/>
+    <framepos objtype="site" objname="t1_s_0_2" name="pos_t1_s_0_2"/>
+    <framepos objtype="site" objname="t1_s_b0_4" name="pos_t1_s_b0_4"/>
+    <framepos objtype="site" objname="t1_s_0_b2" name="pos_t1_s_0_b2"/>
+    <framepos objtype="site" objname="t1_s_1_4" name="pos_t1_s_1_4"/>
+    <framepos objtype="site" objname="t1_s_1_3" name="pos_t1_s_1_3"/>
+    <framepos objtype="site" objname="t1_s_1_5" name="pos_t1_s_1_5"/>
+    <framepos objtype="site" objname="t1_s_1_b3" name="pos_t1_s_1_b3"/>
+    <framepos objtype="site" objname="t1_s_b1_5" name="pos_t1_s_b1_5"/>
+    <framepos objtype="site" objname="t1_s_2_4" name="pos_t1_s_2_4"/>
+    <framepos objtype="site" objname="t1_s_2_0" name="pos_t1_s_2_0"/>
+    <framepos objtype="site" objname="t1_s_2_5" name="pos_t1_s_2_5"/>
+    <framepos objtype="site" objname="t1_s_b2_0" name="pos_t1_s_b2_0"/>
+    <framepos objtype="site" objname="t1_s_2_b4" name="pos_t1_s_2_b4"/>
+    <framepos objtype="site" objname="t1_s_3_1" name="pos_t1_s_3_1"/>
+    <framepos objtype="site" objname="t1_s_3_0" name="pos_t1_s_3_0"/>
+    <framepos objtype="site" objname="t1_s_3_5" name="pos_t1_s_3_5"/>
+    <framepos objtype="site" objname="t1_s_3_b5" name="pos_t1_s_3_b5"/>
+    <framepos objtype="site" objname="t1_s_b3_1" name="pos_t1_s_b3_1"/>
+    <framepos objtype="site" objname="t1_s_4_1" name="pos_t1_s_4_1"/>
+    <framepos objtype="site" objname="t1_s_4_0" name="pos_t1_s_4_0"/>
+    <framepos objtype="site" objname="t1_s_4_2" name="pos_t1_s_4_2"/>
+    <framepos objtype="site" objname="t1_s_4_b0" name="pos_t1_s_4_b0"/>
+    <framepos objtype="site" objname="t1_s_b4_2" name="pos_t1_s_b4_2"/>
+    <framepos objtype="site" objname="t1_s_5_1" name="pos_t1_s_5_1"/>
+    <framepos objtype="site" objname="t1_s_5_3" name="pos_t1_s_5_3"/>
+    <framepos objtype="site" objname="t1_s_5_2" name="pos_t1_s_5_2"/>
+    <framepos objtype="site" objname="t1_s_5_b1" name="pos_t1_s_5_b1"/>
+    <framepos objtype="site" objname="t1_s_b5_3" name="pos_t1_s_b5_3"/>
+    <framelinvel objtype="site" objname="t1_s0" name="linvel_t1_s0"/>
+    <framelinvel objtype="site" objname="t1_s1" name="linvel_t1_s1"/>
+    <framelinvel objtype="site" objname="t1_s2" name="linvel_t1_s2"/>
+    <framelinvel objtype="site" objname="t1_s3" name="linvel_t1_s3"/>
+    <framelinvel objtype="site" objname="t1_s4" name="linvel_t1_s4"/>
+    <framelinvel objtype="site" objname="t1_s5" name="linvel_t1_s5"/>
+    <framelinvel objtype="site" objname="t1_s_0_4" name="linvel_t1_s_0_4"/>
+    <framelinvel objtype="site" objname="t1_s_0_3" name="linvel_t1_s_0_3"/>
+    <framelinvel objtype="site" objname="t1_s_0_2" name="linvel_t1_s_0_2"/>
+    <framelinvel objtype="site" objname="t1_s_1_4" name="linvel_t1_s_1_4"/>
+    <framelinvel objtype="site" objname="t1_s_1_3" name="linvel_t1_s_1_3"/>
+    <framelinvel objtype="site" objname="t1_s_1_5" name="linvel_t1_s_1_5"/>
+    <framelinvel objtype="site" objname="t1_s_2_4" name="linvel_t1_s_2_4"/>
+    <framelinvel objtype="site" objname="t1_s_2_0" name="linvel_t1_s_2_0"/>
+    <framelinvel objtype="site" objname="t1_s_2_5" name="linvel_t1_s_2_5"/>
+    <framelinvel objtype="site" objname="t1_s_3_1" name="linvel_t1_s_3_1"/>
+    <framelinvel objtype="site" objname="t1_s_3_0" name="linvel_t1_s_3_0"/>
+    <framelinvel objtype="site" objname="t1_s_3_5" name="linvel_t1_s_3_5"/>
+    <framelinvel objtype="site" objname="t1_s_4_1" name="linvel_t1_s_4_1"/>
+    <framelinvel objtype="site" objname="t1_s_4_0" name="linvel_t1_s_4_0"/>
+    <framelinvel objtype="site" objname="t1_s_4_2" name="linvel_t1_s_4_2"/>
+    <framelinvel objtype="site" objname="t1_s_5_1" name="linvel_t1_s_5_1"/>
+    <framelinvel objtype="site" objname="t1_s_5_3" name="linvel_t1_s_5_3"/>
+    <framelinvel objtype="site" objname="t1_s_5_2" name="linvel_t1_s_5_2"/>
+    <framelinacc objtype="site" objname="t1_s0" name="linacc_t1_s0"/>
+    <framelinacc objtype="site" objname="t1_s1" name="linacc_t1_s1"/>
+    <framelinacc objtype="site" objname="t1_s2" name="linacc_t1_s2"/>
+    <framelinacc objtype="site" objname="t1_s3" name="linacc_t1_s3"/>
+    <framelinacc objtype="site" objname="t1_s4" name="linacc_t1_s4"/>
+    <framelinacc objtype="site" objname="t1_s5" name="linacc_t1_s5"/>
+    <framelinacc objtype="site" objname="t1_s_0_4" name="linacc_t1_s_0_4"/>
+    <framelinacc objtype="site" objname="t1_s_0_3" name="linacc_t1_s_0_3"/>
+    <framelinacc objtype="site" objname="t1_s_0_2" name="linacc_t1_s_0_2"/>
+    <framelinacc objtype="site" objname="t1_s_1_4" name="linacc_t1_s_1_4"/>
+    <framelinacc objtype="site" objname="t1_s_1_3" name="linacc_t1_s_1_3"/>
+    <framelinacc objtype="site" objname="t1_s_1_5" name="linacc_t1_s_1_5"/>
+    <framelinacc objtype="site" objname="t1_s_2_4" name="linacc_t1_s_2_4"/>
+    <framelinacc objtype="site" objname="t1_s_2_0" name="linacc_t1_s_2_0"/>
+    <framelinacc objtype="site" objname="t1_s_2_5" name="linacc_t1_s_2_5"/>
+    <framelinacc objtype="site" objname="t1_s_3_1" name="linacc_t1_s_3_1"/>
+    <framelinacc objtype="site" objname="t1_s_3_0" name="linacc_t1_s_3_0"/>
+    <framelinacc objtype="site" objname="t1_s_3_5" name="linacc_t1_s_3_5"/>
+    <framelinacc objtype="site" objname="t1_s_4_1" name="linacc_t1_s_4_1"/>
+    <framelinacc objtype="site" objname="t1_s_4_0" name="linacc_t1_s_4_0"/>
+    <framelinacc objtype="site" objname="t1_s_4_2" name="linacc_t1_s_4_2"/>
+    <framelinacc objtype="site" objname="t1_s_5_1" name="linacc_t1_s_5_1"/>
+    <framelinacc objtype="site" objname="t1_s_5_3" name="linacc_t1_s_5_3"/>
+    <framelinacc objtype="site" objname="t1_s_5_2" name="linacc_t1_s_5_2"/>
+    <framelinacc objtype="geom" objname="t1_r01" name="linacc_t1_r01"/>
+    <frameangacc objtype="geom" objname="t1_r01" name="angacc_t1_r01"/>
+    <framepos objtype="geom" objname="t1_r01" name="pos_t1_r01"/>
+    <framelinvel objtype="geom" objname="t1_r01" name="linvel_t1_r01"/>
+    <frameangvel objtype="geom" objname="t1_r01" name="angvel_t1_r01"/>
+    <framequat objtype="geom" objname="t1_r01" name="quat_t1_r01"/>
+    <framelinacc objtype="geom" objname="t1_r23" name="linacc_t1_r23"/>
+    <frameangacc objtype="geom" objname="t1_r23" name="angacc_t1_r23"/>
+    <framepos objtype="geom" objname="t1_r23" name="pos_t1_r23"/>
+    <framelinvel objtype="geom" objname="t1_r23" name="linvel_t1_r23"/>
+    <frameangvel objtype="geom" objname="t1_r23" name="angvel_t1_r23"/>
+    <framequat objtype="geom" objname="t1_r23" name="quat_t1_r23"/>
+    <framelinacc objtype="geom" objname="t1_r45" name="linacc_t1_r45"/>
+    <frameangacc objtype="geom" objname="t1_r45" name="angacc_t1_r45"/>
+    <framepos objtype="geom" objname="t1_r45" name="pos_t1_r45"/>
+    <framelinvel objtype="geom" objname="t1_r45" name="linvel_t1_r45"/>
+    <frameangvel objtype="geom" objname="t1_r45" name="angvel_t1_r45"/>
+    <framequat objtype="geom" objname="t1_r45" name="quat_t1_r45"/>
+    <framepos objtype="site" objname="t2_s0" name="pos_t2_s0"/>
+    <framepos objtype="site" objname="t2_s1" name="pos_t2_s1"/>
+    <framepos objtype="site" objname="t2_s2" name="pos_t2_s2"/>
+    <framepos objtype="site" objname="t2_s3" name="pos_t2_s3"/>
+    <framepos objtype="site" objname="t2_s4" name="pos_t2_s4"/>
+    <framepos objtype="site" objname="t2_s5" name="pos_t2_s5"/>
+    <framepos objtype="site" objname="t2_s_0_4" name="pos_t2_s_0_4"/>
+    <framepos objtype="site" objname="t2_s_0_3" name="pos_t2_s_0_3"/>
+    <framepos objtype="site" objname="t2_s_0_2" name="pos_t2_s_0_2"/>
+    <framepos objtype="site" objname="t2_s_b0_4" name="pos_t2_s_b0_4"/>
+    <framepos objtype="site" objname="t2_s_0_b2" name="pos_t2_s_0_b2"/>
+    <framepos objtype="site" objname="t2_s_1_4" name="pos_t2_s_1_4"/>
+    <framepos objtype="site" objname="t2_s_1_3" name="pos_t2_s_1_3"/>
+    <framepos objtype="site" objname="t2_s_1_5" name="pos_t2_s_1_5"/>
+    <framepos objtype="site" objname="t2_s_1_b3" name="pos_t2_s_1_b3"/>
+    <framepos objtype="site" objname="t2_s_b1_5" name="pos_t2_s_b1_5"/>
+    <framepos objtype="site" objname="t2_s_2_4" name="pos_t2_s_2_4"/>
+    <framepos objtype="site" objname="t2_s_2_0" name="pos_t2_s_2_0"/>
+    <framepos objtype="site" objname="t2_s_2_5" name="pos_t2_s_2_5"/>
+    <framepos objtype="site" objname="t2_s_b2_0" name="pos_t2_s_b2_0"/>
+    <framepos objtype="site" objname="t2_s_2_b4" name="pos_t2_s_2_b4"/>
+    <framepos objtype="site" objname="t2_s_3_1" name="pos_t2_s_3_1"/>
+    <framepos objtype="site" objname="t2_s_3_0" name="pos_t2_s_3_0"/>
+    <framepos objtype="site" objname="t2_s_3_5" name="pos_t2_s_3_5"/>
+    <framepos objtype="site" objname="t2_s_3_b5" name="pos_t2_s_3_b5"/>
+    <framepos objtype="site" objname="t2_s_b3_1" name="pos_t2_s_b3_1"/>
+    <framepos objtype="site" objname="t2_s_4_1" name="pos_t2_s_4_1"/>
+    <framepos objtype="site" objname="t2_s_4_0" name="pos_t2_s_4_0"/>
+    <framepos objtype="site" objname="t2_s_4_2" name="pos_t2_s_4_2"/>
+    <framepos objtype="site" objname="t2_s_4_b0" name="pos_t2_s_4_b0"/>
+    <framepos objtype="site" objname="t2_s_b4_2" name="pos_t2_s_b4_2"/>
+    <framepos objtype="site" objname="t2_s_5_1" name="pos_t2_s_5_1"/>
+    <framepos objtype="site" objname="t2_s_5_3" name="pos_t2_s_5_3"/>
+    <framepos objtype="site" objname="t2_s_5_2" name="pos_t2_s_5_2"/>
+    <framepos objtype="site" objname="t2_s_5_b1" name="pos_t2_s_5_b1"/>
+    <framepos objtype="site" objname="t2_s_b5_3" name="pos_t2_s_b5_3"/>
+    <framelinvel objtype="site" objname="t2_s0" name="linvel_t2_s0"/>
+    <framelinvel objtype="site" objname="t2_s1" name="linvel_t2_s1"/>
+    <framelinvel objtype="site" objname="t2_s2" name="linvel_t2_s2"/>
+    <framelinvel objtype="site" objname="t2_s3" name="linvel_t2_s3"/>
+    <framelinvel objtype="site" objname="t2_s4" name="linvel_t2_s4"/>
+    <framelinvel objtype="site" objname="t2_s5" name="linvel_t2_s5"/>
+    <framelinvel objtype="site" objname="t2_s_0_4" name="linvel_t2_s_0_4"/>
+    <framelinvel objtype="site" objname="t2_s_0_3" name="linvel_t2_s_0_3"/>
+    <framelinvel objtype="site" objname="t2_s_0_2" name="linvel_t2_s_0_2"/>
+    <framelinvel objtype="site" objname="t2_s_1_4" name="linvel_t2_s_1_4"/>
+    <framelinvel objtype="site" objname="t2_s_1_3" name="linvel_t2_s_1_3"/>
+    <framelinvel objtype="site" objname="t2_s_1_5" name="linvel_t2_s_1_5"/>
+    <framelinvel objtype="site" objname="t2_s_2_4" name="linvel_t2_s_2_4"/>
+    <framelinvel objtype="site" objname="t2_s_2_0" name="linvel_t2_s_2_0"/>
+    <framelinvel objtype="site" objname="t2_s_2_5" name="linvel_t2_s_2_5"/>
+    <framelinvel objtype="site" objname="t2_s_3_1" name="linvel_t2_s_3_1"/>
+    <framelinvel objtype="site" objname="t2_s_3_0" name="linvel_t2_s_3_0"/>
+    <framelinvel objtype="site" objname="t2_s_3_5" name="linvel_t2_s_3_5"/>
+    <framelinvel objtype="site" objname="t2_s_4_1" name="linvel_t2_s_4_1"/>
+    <framelinvel objtype="site" objname="t2_s_4_0" name="linvel_t2_s_4_0"/>
+    <framelinvel objtype="site" objname="t2_s_4_2" name="linvel_t2_s_4_2"/>
+    <framelinvel objtype="site" objname="t2_s_5_1" name="linvel_t2_s_5_1"/>
+    <framelinvel objtype="site" objname="t2_s_5_3" name="linvel_t2_s_5_3"/>
+    <framelinvel objtype="site" objname="t2_s_5_2" name="linvel_t2_s_5_2"/>
+    <framelinacc objtype="site" objname="t2_s0" name="linacc_t2_s0"/>
+    <framelinacc objtype="site" objname="t2_s1" name="linacc_t2_s1"/>
+    <framelinacc objtype="site" objname="t2_s2" name="linacc_t2_s2"/>
+    <framelinacc objtype="site" objname="t2_s3" name="linacc_t2_s3"/>
+    <framelinacc objtype="site" objname="t2_s4" name="linacc_t2_s4"/>
+    <framelinacc objtype="site" objname="t2_s5" name="linacc_t2_s5"/>
+    <framelinacc objtype="site" objname="t2_s_0_4" name="linacc_t2_s_0_4"/>
+    <framelinacc objtype="site" objname="t2_s_0_3" name="linacc_t2_s_0_3"/>
+    <framelinacc objtype="site" objname="t2_s_0_2" name="linacc_t2_s_0_2"/>
+    <framelinacc objtype="site" objname="t2_s_1_4" name="linacc_t2_s_1_4"/>
+    <framelinacc objtype="site" objname="t2_s_1_3" name="linacc_t2_s_1_3"/>
+    <framelinacc objtype="site" objname="t2_s_1_5" name="linacc_t2_s_1_5"/>
+    <framelinacc objtype="site" objname="t2_s_2_4" name="linacc_t2_s_2_4"/>
+    <framelinacc objtype="site" objname="t2_s_2_0" name="linacc_t2_s_2_0"/>
+    <framelinacc objtype="site" objname="t2_s_2_5" name="linacc_t2_s_2_5"/>
+    <framelinacc objtype="site" objname="t2_s_3_1" name="linacc_t2_s_3_1"/>
+    <framelinacc objtype="site" objname="t2_s_3_0" name="linacc_t2_s_3_0"/>
+    <framelinacc objtype="site" objname="t2_s_3_5" name="linacc_t2_s_3_5"/>
+    <framelinacc objtype="site" objname="t2_s_4_1" name="linacc_t2_s_4_1"/>
+    <framelinacc objtype="site" objname="t2_s_4_0" name="linacc_t2_s_4_0"/>
+    <framelinacc objtype="site" objname="t2_s_4_2" name="linacc_t2_s_4_2"/>
+    <framelinacc objtype="site" objname="t2_s_5_1" name="linacc_t2_s_5_1"/>
+    <framelinacc objtype="site" objname="t2_s_5_3" name="linacc_t2_s_5_3"/>
+    <framelinacc objtype="site" objname="t2_s_5_2" name="linacc_t2_s_5_2"/>
+    <framelinacc objtype="geom" objname="t2_r01" name="linacc_t2_r01"/>
+    <frameangacc objtype="geom" objname="t2_r01" name="angacc_t2_r01"/>
+    <framepos objtype="geom" objname="t2_r01" name="pos_t2_r01"/>
+    <framelinvel objtype="geom" objname="t2_r01" name="linvel_t2_r01"/>
+    <frameangvel objtype="geom" objname="t2_r01" name="angvel_t2_r01"/>
+    <framequat objtype="geom" objname="t2_r01" name="quat_t2_r01"/>
+    <framelinacc objtype="geom" objname="t2_r23" name="linacc_t2_r23"/>
+    <frameangacc objtype="geom" objname="t2_r23" name="angacc_t2_r23"/>
+    <framepos objtype="geom" objname="t2_r23" name="pos_t2_r23"/>
+    <framelinvel objtype="geom" objname="t2_r23" name="linvel_t2_r23"/>
+    <frameangvel objtype="geom" objname="t2_r23" name="angvel_t2_r23"/>
+    <framequat objtype="geom" objname="t2_r23" name="quat_t2_r23"/>
+    <framelinacc objtype="geom" objname="t2_r45" name="linacc_t2_r45"/>
+    <frameangacc objtype="geom" objname="t2_r45" name="angacc_t2_r45"/>
+    <framepos objtype="geom" objname="t2_r45" name="pos_t2_r45"/>
+    <framelinvel objtype="geom" objname="t2_r45" name="linvel_t2_r45"/>
+    <frameangvel objtype="geom" objname="t2_r45" name="angvel_t2_r45"/>
+    <framequat objtype="geom" objname="t2_r45" name="quat_t2_r45"/>
+  </sensor>
+</mujoco>
