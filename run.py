@@ -6,7 +6,7 @@ from mujoco_physics_engine.tensegrity_mjc_simulation import *
 def run_single_sim():
     output_dir = Path('sim_output')
     output_dir.mkdir(exist_ok=True)
-    xml = Path('mujoco_physics_engine/xml_models/two_3bar_new_platform_config_2.xml')
+    xml = Path('mujoco_physics_engine/xml_models/two_3bar_new_platform_config_1.xml')
     sim = TensegrityMuJoCoSimulator(xml)
 
     target_lengths = [1.0 for _ in range(sim.n_actuators)]

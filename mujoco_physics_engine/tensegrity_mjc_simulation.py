@@ -19,9 +19,10 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
                  xml_path: Path,
                  visualize: bool = True,
                  render_size: (int, int) = (720, 720),
-                 render_fps: int = 100,
+                 render_fps: int = 20,
                  num_actuated_cables: int = 12,
-                 num_rods: int = 3):
+                 num_rods: int = 3,
+                 obs_dim: int = 78):
         super().__init__(xml_path, visualize, render_size, render_fps)
         self.min_cable_length = 0.6
         self.max_cable_length = 2.4
@@ -33,6 +34,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         self.n_cables = self.mjc_model.tendon_stiffness.shape[0]
         self.actuated_ids = (list(range(num_actuated_cables // 2))
                              + list(range(self.n_cables // 2, self.n_cables // 2 + num_actuated_cables // 2)))
+        self.obs_dim = obs_dim  # Dimension of observation space
 
         # Tuple of cable end point of attachment sites' names
         self.cable_sites = [
@@ -98,6 +100,13 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
 
         for motor in self.cable_motors:
             motor.reset_omega_t()
+        
+        self.prev_pos = None
+        self.step_count = 0
+        
+        # Return observation for RL (ADD THIS LINE):
+        obs = self.get_endpts().flatten()
+        return obs[:self.obs_dim] if hasattr(self, 'obs_dim') else obs[:78]
 
     def reset_actuators(self):
         for motor in self.cable_motors:
@@ -137,6 +146,54 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         mujoco.mj_step(self.mjc_model, self.mjc_data)
         self.forward()
 
+        # Get end points for locomotion reward
+        end_pts = self.get_endpts()
+        robot_pos = end_pts.mean(axis=0)  # Use the mean of end points as the robot's position
+        
+        # Calculate forward motion reward
+        if hasattr(self, 'prev_pos') and self.prev_pos is not None:
+            forward_velocity = (robot_pos[0] - self.prev_pos[0]) / self.dt
+            reward = forward_velocity * 10.0  # Reward forward motion
+        else:
+            reward = 0.0
+        
+        self.prev_pos = robot_pos.copy()  # Use .copy() to avoid reference issues
+        
+        # ADD step counter:
+        self.step_count = getattr(self, 'step_count', 0) + 1
+
+
+        # Construct observation
+        # qpos = self.mjc_data.qpos.copy().reshape(-1, 7)
+        # qvel = self.mjc_data.qvel.copy().reshape(-1, 6)
+        # observation = np.concatenate([
+        #     qpos.flatten(),
+        #     qvel.flatten(),
+        #     end_pts.flatten()
+        # ])
+        # observation = observation[:self.obs_dim]  # Ensure observation matches obs_dim
+        observation = self.get_endpts().flatten()
+        if hasattr(self, 'obs_dim'):
+            observation = observation[:self.obs_dim]
+        else:
+            observation = observation[:78]
+        
+        # Remove any NaN values:
+        observation = np.nan_to_num(observation, nan=0.0, posinf=1.0, neginf=-1.0)
+        
+        done = False
+        info = {}
+        
+        return observation, reward, done, info
+
+    def get_robot_position(self):
+        """
+        Returns the current position of the robot.
+        """
+        self.forward()
+        print("Tensegrity positions: ", self.mjc_data.qpos)
+        return self.mjc_data.qpos[:3]  # Assuming the first three elements represent the robot's position
+
     def get_endpts(self):
         # Get end point xyz coordinates
         end_pts = []
@@ -146,6 +203,44 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
 
         end_pts = np.vstack(end_pts)
         return end_pts
+    
+    def render(self, mode='human', width=800, height=600):
+        """Render the simulation"""
+        try:
+            # Import here to avoid issues
+            import mujoco
+            
+            # Create renderer if it doesn't exist
+            if not hasattr(self, '_renderer'):
+                self._renderer = mujoco.Renderer(self.mjc_model, height, width)
+            
+            # Update scene and render
+            self._renderer.update_scene(self.mjc_data)
+            frame = self._renderer.render()
+            
+            if mode == 'human':
+                import cv2
+                # Convert RGB to BGR for OpenCV display
+                frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                cv2.imshow('Tensegrity Robot', frame_bgr)
+                cv2.waitKey(1)
+            
+            return frame
+            
+        except Exception as e:
+            print(f"Rendering failed: {e}")
+            return None
+
+    def close(self):
+        """Close renderer and cleanup"""
+        try:
+            if hasattr(self, '_renderer'):
+                self._renderer.close()
+            import cv2
+            cv2.destroyAllWindows()
+        except:
+            pass
+
 
     def run_target_lengths(self, target_lengths, max_gait_time=6.0, vis_save_dir: Path = None, vis_prefix: str = ""):
         self.reset_actuators()
@@ -211,8 +306,23 @@ class MultiProcTensegrityMujocoSimulator:
         ]
 
     def reset(self):
-        for sim in self.sims:
-            sim.reset()
+        # for sim in self.sims:
+        #     sim.reset()
+        """
+        Resets the robots as if it was just instantiated from the xml file.
+        """
+        super().reset()
+        self.bring_to_grnd()
+
+        for motor in self.cable_motors:
+            motor.reset_omega_t()
+        
+        # Initialize RL state
+        self.prev_pos = None
+        self.step_count = 0
+        
+        # Return initial observation
+        return self._get_observation()
 
     def set_state(self, all_states: np.ndarray):
         assert len(self.sims) == all_states.shape[0], "Number of sims does not match number of states"
@@ -269,3 +379,7 @@ class MultiProcTensegrityMujocoSimulator:
 
     def parallel_run_target_lengths(self, target_lengths: List, max_num_parallel: int = 10):
         self._parallel_proc(target_lengths, self._run_target_lengths, max_num_parallel)
+
+    # Add this method to the TensegrityMuJoCoSimulator class
+    # Add this method to your TensegrityMuJoCoSimulator class (at the end of the class)
+    

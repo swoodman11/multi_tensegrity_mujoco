@@ -6,8 +6,8 @@ class PID:
                  k_p=6.0,
                  k_i=0.01,
                  k_d=0.5,
-                 min_length=80,
-                 RANGE=100,
+                 min_length=0.80,
+                 RANGE=1.0,
                  tol=0.1,
                  sys_precision=np.float64):
         self.sys_precision = sys_precision
@@ -16,8 +16,8 @@ class PID:
         self.k_p = k_p
         self.k_i = k_i
         self.k_d = k_d
-        self.min_length = min_length / 100.
-        self.RANGE = RANGE / 100.
+        self.min_length = min_length
+        self.RANGE = RANGE
         self.tol = tol
         self.LEFT_RANGE = None
         self.RIGHT_RANGE = None

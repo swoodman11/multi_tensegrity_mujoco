@@ -300,25 +300,25 @@
       <site site="t2_s_4_1"/>
     </spatial>
 
-<!--    <spatial name="connect0" stiffness="100000" springlength="0.3">-->
-<!--      <site site="t2_s1"/>-->
-<!--      <site site="t1_s4"/>-->
-<!--    </spatial>-->
-<!--    <spatial name="connect1" stiffness="100000" springlength="0.3">-->
-<!--      <site site="t2_s5"/>-->
-<!--      <site site="t1_s2"/>-->
-<!--    </spatial>-->
-<!--    <spatial name="connect2" stiffness="100000" springlength="0.3">-->
-<!--      <site site="t2_s3"/>-->
-<!--      <site site="t1_s0"/>-->
-<!--    </spatial>-->
+   <spatial name="connect0" stiffness="100000" springlength="0.005">
+     <site site="t2_s1"/>
+     <site site="t1_s4"/>
+   </spatial>
+   <spatial name="connect1" stiffness="100000" springlength="0.005">
+     <site site="t2_s5"/>
+     <site site="t1_s2"/>
+   </spatial>
+   <spatial name="connect2" stiffness="100000" springlength="0.005">
+     <site site="t2_s3"/>
+     <site site="t1_s0"/>
+    </spatial>
   </tendon>
 
-  <equality>
+  <!-- <equality>
     <weld body1="t1_r45" body2="t2_r01" anchor="0 0 0"/>
     <weld body1="t1_r23" body2="t2_r45" anchor="0 0 0"/>
     <weld body1="t1_r01" body2="t2_r23" anchor="0 0 0"/>
-  </equality>
+  </equality> -->
 
   <sensor>
     <framepos objtype="site" objname="t1_s0" name="pos_t1_s0"/>

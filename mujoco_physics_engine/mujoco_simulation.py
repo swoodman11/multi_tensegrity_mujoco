@@ -33,6 +33,9 @@ class AbstractMuJoCoSimulator:
         self.mjc_data = mujoco.MjData(self.mjc_model)
 
     def _load_model_from_xml(self, xml_path: Path) -> mujoco.MjModel:
+        # Convert string to Path object if needed
+        if isinstance(xml_path, str):
+            xml_path = Path(xml_path)
         model = mujoco.MjModel.from_xml_path(xml_path.as_posix())
         return model
 
