@@ -12,7 +12,7 @@ class MotorState:
 
 class DCMotor:
     def __init__(self,
-                 winch_r=0.035,
+                 winch_r=0.035, # unit: meter*10, divide by 10 to get real world value
                  speed=np.array(0.8),
                  sys_precision=np.float64):
         super().__init__()

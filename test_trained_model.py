@@ -37,7 +37,7 @@ from tensegrity_env import TensegrityEnv
 import time
 
 # Load the trained model
-model = PPO.load("ppo_tensegrity_gait")
+model = PPO.load("ppo_tensegrity_gait_20250925_155047")
 env = TensegrityEnv(visualize=True)  # Now created with visualization enabled
 
 print("Testing trained model with visualization...")

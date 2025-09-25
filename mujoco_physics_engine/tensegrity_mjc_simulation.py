@@ -24,11 +24,11 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
                  num_rods: int = 3,
                  obs_dim: int = 78):
         super().__init__(xml_path, visualize, render_size, render_fps)
-        self.min_cable_length = 0.6
-        self.max_cable_length = 2.4
+        self.min_cable_length = 0.6 # unit: meters*10
+        self.max_cable_length = 2.4 # unit: meters*10
         self.n_actuators = num_actuated_cables
         self.curr_ctrl = [0.0 for _ in range(num_actuated_cables)]
-        self.pids = [PID() for _ in range(num_actuated_cables)]
+        self.pids = [PID() for _ in range(num_actuated_cables)] # NOTE: should this take in the min and max lengths?
         self.cable_motors = [DCMotor() for _ in range(num_actuated_cables)]
         self.n_rods = num_rods
         self.n_cables = self.mjc_model.tendon_stiffness.shape[0]
@@ -88,7 +88,8 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         qpos = self.mjc_data.qpos.copy().reshape(-1, 7)
         end_pts = self.get_endpts().reshape(-1, 3)
         min_z = end_pts[:, 2].min()
-        qpos[:, 2] -= min_z - 0.175
+        reset_ground_height = 0.175 # final height of end cap above ground
+        qpos[:, 2] -= min_z - reset_ground_height
         self.mjc_data.qpos = qpos.reshape(1, -1)
 
     def reset(self):
@@ -97,6 +98,8 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         """
         super().reset()
         self.bring_to_grnd()
+        # Store the original state
+
 
         for motor in self.cable_motors:
             motor.reset_omega_t()
@@ -116,11 +119,31 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
             pid.reset()
 
 
-    def sim_step(self, controls=None):
+    def sim_step(self, target_lengths=None):
         """
-        Takes a single simulation step given controls. Controls must be list of np.array that matches the n_actuators
+        Takes a single simulation step given target_lengths from RL policy.
         """
         ctrl_idx = 0
+
+        # NOTE: double check that target_lengths is in [0, 1] range
+        # Convert target_lengths to controls in [-1, 1]
+        if target_lengths is not None:
+            controls = []
+            for i in range(len(target_lengths)):
+                lengths = target_lengths[i]
+                rest_length = self.mjc_model.tendon_lengthspring[self.actuated_ids[i], 0]
+
+                # # Normalize lengths to [0, 1]
+                # norm_length = (lengths - self.min_cable_length) / (self.max_cable_length - self.min_cable_length)
+                # norm_length = np.clip(norm_length, 0.0, 1.0)
+
+                # Compute control signal using PID
+                s0 = self.mjc_data.sensor(f"pos_{self.cable_sites[self.actuated_ids[i]][0]}").data
+                s1 = self.mjc_data.sensor(f"pos_{self.cable_sites[self.actuated_ids[i]][1]}").data
+                curr_length = np.linalg.norm(s1 - s0)
+
+                ctrl, _ = self.pids[i].update_control_by_target_norm_length(curr_length, lengths, rest_length)
+                controls.append(ctrl)
 
         self.forward()
         for i in range(len(self.cable_sites)):
@@ -136,7 +159,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
             if controls is not None and i in self.actuated_ids:
                 ctrl = np.array(controls[ctrl_idx])
 
-                # Compute change in cable rest lengths basted on ctrl
+                # Compute change in cable rest lengths based on ctrl
                 dl = self.cable_motors[ctrl_idx].compute_cable_length_delta(ctrl, self.dt)
                 rest_length = rest_length - dl
                 self.mjc_model.tendon_lengthspring[self.actuated_ids[ctrl_idx]] = rest_length
@@ -150,18 +173,21 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         end_pts = self.get_endpts()
         robot_pos = end_pts.mean(axis=0)  # Use the mean of end points as the robot's position
         
-        # Calculate forward motion reward
+        # Calculate forward velocity reward
         if hasattr(self, 'prev_pos') and self.prev_pos is not None:
             forward_velocity = (robot_pos[0] - self.prev_pos[0]) / self.dt
             reward = forward_velocity * 10.0  # Reward forward motion
         else:
             reward = 0.0
         
+        # # Calculate total forward distance reward
+        # if hasattr(self, 'prev_pos') and self.prev_pos is not None:
+        #     # Calculate displacement from initial state
+
         self.prev_pos = robot_pos.copy()  # Use .copy() to avoid reference issues
         
         # ADD step counter:
         self.step_count = getattr(self, 'step_count', 0) + 1
-
 
         # Construct observation
         # qpos = self.mjc_data.qpos.copy().reshape(-1, 7)
@@ -242,49 +268,49 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
             pass
 
 
-    def run_target_lengths(self, target_lengths, max_gait_time=6.0, vis_save_dir: Path = None, vis_prefix: str = "", save_frames_as_png: bool = True):
-        self.reset_actuators()
+    # def run_target_lengths(self, target_lengths, max_gait_time=6.0, vis_save_dir: Path = None, vis_prefix: str = "", save_frames_as_png: bool = True):
+    #     self.reset_actuators()
 
-        step = 0
-        max_steps = int(max_gait_time / self.dt)
-        controls = [1.0]  # dummy value for init
-        frames = []
+    #     step = 0
+    #     max_steps = int(max_gait_time / self.dt)
+    #     controls = [1.0]  # dummy value for init
+    #     frames = []
 
-        while any([c != 0 for c in controls]) and step < max_steps:
-            step += 1
-            curr_lengths = []
-            self.forward()
+    #     while any([c != 0 for c in controls]) and step < max_steps:
+    #         step += 1
+    #         curr_lengths = []
+    #         self.forward()
 
-            controls = []
-            for i in range(len(target_lengths)):
-                pid = self.pids[i]
-                lengths = target_lengths[i]
+    #         controls = []
+    #         for i in range(len(target_lengths)):
+    #             pid = self.pids[i]
+    #             lengths = target_lengths[i]
 
-                rest_length = self.mjc_model.tendon_lengthspring[i, 0]
+    #             rest_length = self.mjc_model.tendon_lengthspring[i, 0]
 
-                idx = self.cable_map[i] if hasattr(self, "cable_map") and self.cable_map else self.actuated_ids[i]
-                s0 = self.mjc_data.sensor(f"pos_{self.cable_sites[idx][0]}").data
-                s1 = self.mjc_data.sensor(f"pos_{self.cable_sites[idx][1]}").data
-                curr_length = np.linalg.norm(s1 - s0)
-                curr_lengths.append(curr_length)
+    #             idx = self.cable_map[i] if hasattr(self, "cable_map") and self.cable_map else self.actuated_ids[i]
+    #             s0 = self.mjc_data.sensor(f"pos_{self.cable_sites[idx][0]}").data
+    #             s1 = self.mjc_data.sensor(f"pos_{self.cable_sites[idx][1]}").data
+    #             curr_length = np.linalg.norm(s1 - s0)
+    #             curr_lengths.append(curr_length)
 
-                ctrl, _ = pid.update_control_by_target_norm_length(curr_length, lengths, rest_length)
-                controls.append(ctrl)
+    #             ctrl, _ = pid.update_control_by_target_norm_length(curr_length, lengths, rest_length)
+    #             controls.append(ctrl)
 
-            self.sim_step(controls)
+    #         self.sim_step(controls) # NOTE: this is wrong in the learning framework
 
-            # Always collect frames for video generation when visualization is enabled
-            if vis_save_dir is not None or save_frames_as_png is False:  # This allows collecting frames without specifying vis_save_dir
-                frame = self.render_frame('front')
-                frames.append(frame)
+    #         # Always collect frames for video generation when visualization is enabled
+    #         if vis_save_dir is not None or save_frames_as_png is False:  # This allows collecting frames without specifying vis_save_dir
+    #             frame = self.render_frame('front')
+    #             frames.append(frame)
                 
-                # Only save PNG files if explicitly requested
-                if vis_save_dir is not None and save_frames_as_png:
-                    if not vis_save_dir.exists():
-                        vis_save_dir.mkdir(exist_ok=True)
-                    Image.fromarray(frame).save(vis_save_dir / f"{vis_prefix}_{step}.png")
+    #             # Only save PNG files if explicitly requested
+    #             if vis_save_dir is not None and save_frames_as_png:
+    #                 if not vis_save_dir.exists():
+    #                     vis_save_dir.mkdir(exist_ok=True)
+    #                 Image.fromarray(frame).save(vis_save_dir / f"{vis_prefix}_{step}.png")
 
-        return frames
+    #     return frames
 
 class MultiProcTensegrityMujocoSimulator:
 
