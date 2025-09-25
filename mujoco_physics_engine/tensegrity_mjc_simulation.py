@@ -242,7 +242,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
             pass
 
 
-    def run_target_lengths(self, target_lengths, max_gait_time=6.0, vis_save_dir: Path = None, vis_prefix: str = ""):
+    def run_target_lengths(self, target_lengths, max_gait_time=6.0, vis_save_dir: Path = None, vis_prefix: str = "", save_frames_as_png: bool = True):
         self.reset_actuators()
 
         step = 0
@@ -273,12 +273,16 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
 
             self.sim_step(controls)
 
-            if vis_save_dir is not None:
-                if not vis_save_dir.exists():
-                    vis_save_dir.mkdir(exist_ok=True)
+            # Always collect frames for video generation when visualization is enabled
+            if vis_save_dir is not None or save_frames_as_png is False:  # This allows collecting frames without specifying vis_save_dir
                 frame = self.render_frame('front')
                 frames.append(frame)
-                Image.fromarray(frame).save(vis_save_dir / f"{vis_prefix}_{step}.png")
+                
+                # Only save PNG files if explicitly requested
+                if vis_save_dir is not None and save_frames_as_png:
+                    if not vis_save_dir.exists():
+                        vis_save_dir.mkdir(exist_ok=True)
+                    Image.fromarray(frame).save(vis_save_dir / f"{vis_prefix}_{step}.png")
 
         return frames
 
@@ -288,7 +292,7 @@ class MultiProcTensegrityMujocoSimulator:
                  num_sims,
                  xml_path: Path,
                  # visualize: bool = True,
-                 render_size: (int, int) = (240, 240),
+                 render_size: tuple = (240, 240),
                  render_fps: int = 100,
                  num_actuated_cables: int = 12,
                  num_rods: int = 3):

@@ -1,0 +1,33 @@
+# Multi-Tensegrity MuJoCo Simulator - .gitignore
+
+# Simulation outputs
+sim_output/
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.mp4
+*.avi
+*.mov
+*.mkv
+frames/
+videos/
+renders/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Desktop.ini
