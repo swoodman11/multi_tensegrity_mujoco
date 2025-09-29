@@ -22,7 +22,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
                  render_fps: int = 20,
                  num_actuated_cables: int = 12,
                  num_rods: int = 3,
-                 obs_dim: int = 78):
+                 obs_dim: int = 104):
         super().__init__(xml_path, visualize, render_size, render_fps)
         self.min_cable_length = 0.6 # unit: meters*10
         self.max_cable_length = 2.4 # unit: meters*10
@@ -100,16 +100,23 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         self.bring_to_grnd()
         # Store the original state
 
+        
+        
+        
+        self.prev_pos = None
+        self.step_count = 0
+
+        self.apply_random_perturbation()
 
         for motor in self.cable_motors:
             motor.reset_omega_t()
         
-        self.prev_pos = None
-        self.step_count = 0
-        
         # Return observation for RL (ADD THIS LINE):
-        obs = self.get_endpts().flatten()
-        return obs[:self.obs_dim] if hasattr(self, 'obs_dim') else obs[:78]
+        # obs = self.get_endpts().flatten()
+        # return obs[:self.obs_dim] if hasattr(self, 'obs_dim') else obs[:78]
+        #ADD NEW OBS HERE STEPH
+        observation = self.get_observation()
+        return observation
 
     def reset_actuators(self):
         for motor in self.cable_motors:
@@ -125,10 +132,13 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         """
         ctrl_idx = 0
 
+        # 
+
+
         # NOTE: double check that target_lengths is in [0, 1] range
         # Convert target_lengths to controls in [-1, 1]
         if target_lengths is not None:
-            controls = []
+            controls = np.zeros(self.n_actuators)  # NumPy array
             for i in range(len(target_lengths)):
                 lengths = target_lengths[i]
                 rest_length = self.mjc_model.tendon_lengthspring[self.actuated_ids[i], 0]
@@ -143,7 +153,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
                 curr_length = np.linalg.norm(s1 - s0)
 
                 ctrl, _ = self.pids[i].update_control_by_target_norm_length(curr_length, lengths, rest_length)
-                controls.append(ctrl)
+                controls[ctrl_idx] = ctrl
 
         self.forward()
         for i in range(len(self.cable_sites)):
@@ -174,38 +184,31 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         robot_pos = end_pts.mean(axis=0)  # Use the mean of end points as the robot's position
         
         # Calculate forward velocity reward
+        velocity_reward = 0.0
+        # print("Robot position: ", self.prev_pos)
         if hasattr(self, 'prev_pos') and self.prev_pos is not None:
-            forward_velocity = (robot_pos[0] - self.prev_pos[0]) / self.dt
-            reward = forward_velocity * 10.0  # Reward forward motion
-        else:
-            reward = 0.0
+            # Calculate XY plane displacement
+            xy_displacement = robot_pos[:2] - self.prev_pos[:2]  # [x, y] only
+            xy_speed = np.linalg.norm(xy_displacement) / self.dt
+            
+            velocity_reward = xy_speed * 5.0  # Reward any XY movement
+        
+        # Add distance-based reward (total distance from origin)
+        distance_reward = self.calculate_omnidirectional_distance_reward(robot_pos)
+
+        penalties = self.calculate_anti_exploit_penalties(robot_pos, controls) #0 
+        
+        reward = velocity_reward + distance_reward + penalties
         
         # # Calculate total forward distance reward
         # if hasattr(self, 'prev_pos') and self.prev_pos is not None:
         #     # Calculate displacement from initial state
 
-        self.prev_pos = robot_pos.copy()  # Use .copy() to avoid reference issues
-        
-        # ADD step counter:
+        self.prev_pos = robot_pos.copy()
         self.step_count = getattr(self, 'step_count', 0) + 1
 
-        # Construct observation
-        # qpos = self.mjc_data.qpos.copy().reshape(-1, 7)
-        # qvel = self.mjc_data.qvel.copy().reshape(-1, 6)
-        # observation = np.concatenate([
-        #     qpos.flatten(),
-        #     qvel.flatten(),
-        #     end_pts.flatten()
-        # ])
-        # observation = observation[:self.obs_dim]  # Ensure observation matches obs_dim
-        observation = self.get_endpts().flatten()
-        if hasattr(self, 'obs_dim'):
-            observation = observation[:self.obs_dim]
-        else:
-            observation = observation[:78]
-        
-        # Remove any NaN values:
-        observation = np.nan_to_num(observation, nan=0.0, posinf=1.0, neginf=-1.0)
+        # USE COMPREHENSIVE OBSERVATION METHOD
+        observation = self.get_observation()  # This calls the 78-dim method
         
         done = False
         info = {}
@@ -219,6 +222,30 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         self.forward()
         print("Tensegrity positions: ", self.mjc_data.qpos)
         return self.mjc_data.qpos[:3]  # Assuming the first three elements represent the robot's position
+
+    def calculate_omnidirectional_distance_reward(self, robot_pos):
+        """Reward for exploring the XY plane in any direction"""
+        
+        # Initialize tracking variables
+        if not hasattr(self, 'max_distance_from_origin'):
+            self.max_distance_from_origin = 0.0
+            self.origin_pos = robot_pos[:2].copy()  # Store starting position
+        
+        # Calculate distance from origin in XY plane
+        xy_distance_from_origin = np.linalg.norm(robot_pos[:2] - self.origin_pos)
+        
+        # Reward for reaching new maximum distances
+        exploration_reward = 0.0
+        if xy_distance_from_origin > self.max_distance_from_origin:
+            exploration_reward = (xy_distance_from_origin - self.max_distance_from_origin) * 20.0
+            self.max_distance_from_origin = xy_distance_from_origin
+        
+        # Base distance reward (encourages staying away from origin)
+        base_distance_reward = xy_distance_from_origin * 1.0
+
+                
+        
+        return exploration_reward + base_distance_reward 
 
     def get_endpts(self):
         # Get end point xyz coordinates
@@ -267,50 +294,149 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         except:
             pass
 
+    def apply_random_perturbation(self):
+        """Apply random forces/torques to prevent exploitation"""
+        if self.step_count % 50 == 0:  # Every 50 steps
+            # Random external force on platform
+            force_magnitude = np.random.uniform(0.5, 2.0)
+            force_direction = np.random.uniform(-1, 1, 3)  # Random x,y,z direction
+            force_direction = force_direction / np.linalg.norm(force_direction)
+            
+            # Apply force to platform body
+            platform_body_id = mujoco.mj_name2id(self.mjc_model, mujoco.mjtObj.mjOBJ_BODY, "t1_r01")
+            if platform_body_id >= 0:
+                self.mjc_data.xfrc_applied[platform_body_id][:3] = force_magnitude * force_direction
 
-    # def run_target_lengths(self, target_lengths, max_gait_time=6.0, vis_save_dir: Path = None, vis_prefix: str = "", save_frames_as_png: bool = True):
-    #     self.reset_actuators()
+    def calculate_anti_exploit_penalties(self, robot_pos, controls):
+        """Penalties to prevent common exploitation behaviors"""
+        penalties = 0.0
+        
+        # 1. Prevent excessive bouncing (z-axis exploitation)
+        if hasattr(self, 'prev_pos') and self.prev_pos is not None:
+            z_velocity = abs((robot_pos[2] - self.prev_pos[2]) / self.dt)
+            if z_velocity > 1.0:  # Too much vertical movement
+                penalties -= z_velocity * 5.0
+        
+        # 2. Prevent rapid oscillations in controls
+        if hasattr(self, 'prev_controls'):
+            control_change = np.sum(np.abs(controls - self.prev_controls))
+            if control_change > 2.0:  # Too rapid changes
+                penalties -= control_change * 2.0
+        self.prev_controls = controls.copy()
+        
+        # 3. Energy efficiency penalty
+        energy_cost = np.sum(np.abs(controls)) * 0.01
+        penalties -= energy_cost
+        
+        # 4. FIX: Use correct body name for stability check
+        # Choose one of the robot bodies (e.g., t1_r01) for orientation check
+        try:
+            platform_quat = self.mjc_data.body("t1_r01").xquat  # Use actual body name
+            tilt_penalty = abs(platform_quat[1]) + abs(platform_quat[2])  # Penalize roll/pitch
+            penalties -= tilt_penalty * 10.0
+        except KeyError:
+            # Fallback: skip tilt penalty if body not found
+            pass
+        
+        penalties = penalties * 0.1
 
-    #     step = 0
-    #     max_steps = int(max_gait_time / self.dt)
-    #     controls = [1.0]  # dummy value for init
-    #     frames = []
+        return penalties
 
-    #     while any([c != 0 for c in controls]) and step < max_steps:
-    #         step += 1
-    #         curr_lengths = []
-    #         self.forward()
+    def get_observation(self):
+        """
+        Comprehensive observation for RL training
+        Returns 78-dimensional observation vector
+        """
+        observation = []
+        
+        # 1. Robot state (42 dims): positions + orientations of all bodies
+        robot_state = self.get_robot_state()
+        observation.extend(robot_state)
+        
+        # 2. Cable state (24 dims): current lengths + velocities
+        cable_state = self.get_cable_state()
+        observation.extend(cable_state)
+        
+        # 3. End effector positions (18 dims): spatial locations
+        end_effector_state = self.get_end_effector_state()
+        observation.extend(end_effector_state)
+        
+        # 4. Time-based features (2 dims): simulation time + step count
+        sim_time = self.mjc_data.time
+        step_normalized = (getattr(self, 'step_count', 0) % 1000) / 1000.0  # Normalize step count
+        observation.extend([sim_time, step_normalized])
+        
+        # Verify dimension consistency
+        obs_array = np.array(observation, dtype=np.float32)
+        expected_dim = getattr(self, 'obs_dim', 104)
+        
+        if len(obs_array) != expected_dim:
+            print(f"⚠️ OBSERVATION DIMENSION MISMATCH: Got {len(obs_array)}, expected {expected_dim}")
+            # Pad or truncate to match expected dimension
+            if len(obs_array) < expected_dim:
+                obs_array = np.pad(obs_array, (0, expected_dim - len(obs_array)))
+            else:
+                obs_array = obs_array[:expected_dim]
+        
+        return obs_array
 
-    #         controls = []
-    #         for i in range(len(target_lengths)):
-    #             pid = self.pids[i]
-    #             lengths = target_lengths[i]
+    def get_robot_state(self):
+        """Get robot body positions and orientations"""
+        robot_state = []
+        robot_bodies = ["t1_r01", "t1_r23", "t1_r45", "t2_r01", "t2_r23", "t2_r45"]
+        
+        for body_name in robot_bodies:
+            try:
+                pos = self.mjc_data.body(body_name).xpos  # 3D position
+                quat = self.mjc_data.body(body_name).xquat  # 4D quaternion
+                robot_state.extend(pos)
+                robot_state.extend(quat)
+            except KeyError:
+                robot_state.extend([0.0] * 7)  # Fallback if body not found
+        
+        return robot_state
 
-    #             rest_length = self.mjc_model.tendon_lengthspring[i, 0]
+    def get_cable_state(self):
+        """Get current cable lengths and velocities"""
+        cable_state = []
+        
+        # Initialize previous cable lengths tracking
+        if not hasattr(self, 'prev_cable_lengths'):
+            self.prev_cable_lengths = [0.0] * self.n_actuators
+        
+        current_lengths = []
+        for i in range(self.n_actuators):
+            # Get current cable length using your existing method
+            if hasattr(self, 'cable_sites') and i < len(self.cable_sites):
+                try:
+                    s0 = self.mjc_data.sensor(f"pos_{self.cable_sites[i][0]}").data
+                    s1 = self.mjc_data.sensor(f"pos_{self.cable_sites[i][1]}").data
+                    current_length = np.linalg.norm(s1 - s0)
+                except:
+                    current_length = 0.0
+            else:
+                current_length = 0.0
+            
+            current_lengths.append(current_length)
+            
+            # Calculate length velocity
+            length_velocity = (current_length - self.prev_cable_lengths[i]) / self.dt
+            
+            cable_state.extend([current_length, length_velocity])
+        
+        # Update previous lengths for next step
+        self.prev_cable_lengths = current_lengths
+        
+        return cable_state
 
-    #             idx = self.cable_map[i] if hasattr(self, "cable_map") and self.cable_map else self.actuated_ids[i]
-    #             s0 = self.mjc_data.sensor(f"pos_{self.cable_sites[idx][0]}").data
-    #             s1 = self.mjc_data.sensor(f"pos_{self.cable_sites[idx][1]}").data
-    #             curr_length = np.linalg.norm(s1 - s0)
-    #             curr_lengths.append(curr_length)
+    def get_end_effector_state(self):
+        """Get positions of robot end points"""
+        try:
+            end_pts = self.get_endpts()  # Use existing method
+            return end_pts.flatten()
+        except:
+            return [0.0] * 18  # 6 endpoints × 3D fallback
 
-    #             ctrl, _ = pid.update_control_by_target_norm_length(curr_length, lengths, rest_length)
-    #             controls.append(ctrl)
-
-    #         self.sim_step(controls) # NOTE: this is wrong in the learning framework
-
-    #         # Always collect frames for video generation when visualization is enabled
-    #         if vis_save_dir is not None or save_frames_as_png is False:  # This allows collecting frames without specifying vis_save_dir
-    #             frame = self.render_frame('front')
-    #             frames.append(frame)
-                
-    #             # Only save PNG files if explicitly requested
-    #             if vis_save_dir is not None and save_frames_as_png:
-    #                 if not vis_save_dir.exists():
-    #                     vis_save_dir.mkdir(exist_ok=True)
-    #                 Image.fromarray(frame).save(vis_save_dir / f"{vis_prefix}_{step}.png")
-
-    #     return frames
 
 class MultiProcTensegrityMujocoSimulator:
 
@@ -411,5 +537,4 @@ class MultiProcTensegrityMujocoSimulator:
         self._parallel_proc(target_lengths, self._run_target_lengths, max_num_parallel)
 
     # Add this method to the TensegrityMuJoCoSimulator class
-    # Add this method to your TensegrityMuJoCoSimulator class (at the end of the class)
-    
+    # Add this method to your TensegrityMuJoSimulator class (at the end of the class)

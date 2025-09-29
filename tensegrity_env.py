@@ -7,7 +7,7 @@ from pathlib import Path
 from mujoco_physics_engine.tensegrity_mjc_simulation import TensegrityMuJoCoSimulator as Simulator # Adjust import if needed
 
 class TensegrityEnv(gym.Env):
-    def __init__(self, obs_dim=78, visualize=False):
+    def __init__(self, obs_dim=104, visualize=False):
         super().__init__()
         
         # Setup the simulator with Path object

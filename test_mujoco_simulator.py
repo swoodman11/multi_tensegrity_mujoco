@@ -3,7 +3,7 @@ import mujoco.viewer
 
 try:
     # Load your XML model directly
-    model = mujoco.MjModel.from_xml_path("mujoco_physics_engine/xml_models/two_3bar_new_platform_config_1.xml")
+    model = mujoco.MjModel.from_xml_path("mujoco_physics_engine/xml_models/two_3bar_new_platform_config_1.xml") #was two_3bar_new_platform_config_1.xml
     data = mujoco.MjData(model)
     
     print("MuJoCo model loaded successfully")
