@@ -42,7 +42,7 @@ import matplotlib.pyplot as plt
 
 
 # Load the trained model
-model = PPO.load("trained_models/ppo_tensegrity_gait_20250930_131237")  
+model = PPO.load("ppo_tensegrity_gait_seeded")  
 # interesting post physics etc 20250929_134907
 # different configuration doesn't experience same physics freakout: ppo_tensegrity_gait_20250930_091454
 env = TensegrityEnv(visualize=True)  # Now created with visualization enabled

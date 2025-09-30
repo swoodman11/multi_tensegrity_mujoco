@@ -33,8 +33,12 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         self.cable_motors = [DCMotor() for _ in range(num_actuated_cables)]
         self.n_rods = num_rods
         self.n_cables = self.mjc_model.tendon_stiffness.shape[0]
+        # NOTE: start here for debugging the zero inputs 09/30/2025
         self.actuated_ids = (list(range(num_actuated_cables // 2))
                              + list(range(self.n_cables // 2, self.n_cables // 2 + num_actuated_cables // 2)))
+        # self.actuated_ids = [0,1,2,6,7,8,9,10,11,15,16,17] # specific to two_3bar_new_platform_config_1.xml
+        self.actuated_ids = [0, 1, 2, 3, 4, 5, 15, 16, 17, 18, 19, 20]  # All vertex-to-bar cables
+        print(self.actuated_ids)
         # Observation mode: 'tier2' (96D) or 'legacy104' (104D)
         self.obs_mode = obs_mode if obs_mode in ("tier2", "legacy104") else "tier2"
         self.obs_dim = (96 if self.obs_mode == "tier2" else 104) if obs_dim is None else obs_dim
@@ -144,6 +148,9 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
 
         # NOTE: double check that target_lengths is in [0, 1] range
 
+        # Adding some debugging here (Setph)
+        
+
         # Convert target_lengths to controls in [-1, 1]
         if target_lengths is not None:
             controls = np.zeros(self.n_actuators)  # NumPy array
@@ -158,33 +165,27 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
                 # Compute control signal using PID
                 s0 = self.mjc_data.sensor(f"pos_{self.cable_sites[self.actuated_ids[i]][0]}").data
                 s1 = self.mjc_data.sensor(f"pos_{self.cable_sites[self.actuated_ids[i]][1]}").data
+                print(self.actuated_ids[i])
+                print(self.cable_sites[self.actuated_ids[i]])
+                print(self.cable_sites[self.actuated_ids[i]][0])
                 curr_length = np.linalg.norm(s1 - s0)
+                
 
                 ctrl, _ = self.pids[i].update_control_by_target_norm_length(curr_length, lengths, rest_length)
-                controls[ctrl_idx] = ctrl
+                controls[i] = ctrl
 
         self.forward()
         for i in range(len(self.cable_sites)):
-            sites = self.cable_sites[i]
-            rest_length = self.mjc_model.tendon_lengthspring[i, 0]
-
-            # HACK to have tendons only apply tension but not compression forces
-            # NOTE: If connected points are connected using tendons, will they be affected by this hack?
-            # QUESTION: does the tendon_stiffness ever get reset to not be zero?
-            # s0 = self.mjc_data.sensor(f"pos_{sites[0]}").data
-            # s1 = self.mjc_data.sensor(f"pos_{sites[1]}").data
-            # dist = np.linalg.norm(s1 - s0)
-            # self.mjc_model.tendon_stiffness[i] = 0 if dist < rest_length else self.stiffness[i]
-
+            # ... existing code ...
             if controls is not None and i in self.actuated_ids:
-                ctrl = np.array(controls[ctrl_idx])
-
-                # Compute change in cable rest lengths based on ctrl
-                dl = self.cable_motors[ctrl_idx].compute_cable_length_delta(ctrl, self.dt)
+                # Find the position in the action vector
+                action_idx = list(self.actuated_ids).index(i)
+                ctrl = np.array(controls[action_idx])
+                
+                # Compute change in cable rest lengths
+                dl = self.cable_motors[action_idx].compute_cable_length_delta(ctrl, self.dt)
                 rest_length = rest_length - dl
-                self.mjc_model.tendon_lengthspring[self.actuated_ids[ctrl_idx]] = rest_length
-
-                ctrl_idx += 1
+                self.mjc_model.tendon_lengthspring[i] = rest_length
 
         mujoco.mj_step(self.mjc_model, self.mjc_data)
         self.forward()

@@ -23,8 +23,8 @@ class PID:
         self.RIGHT_RANGE = None
         self.done = None
 
-        print("Min length:", self.min_length)
-        print("Range:", self.RANGE)
+        # print("Min length:", self.min_length)
+        # print("Range:", self.RANGE)
 
     def update_control_by_target_norm_length(self, current_length, target_norm_length, rest_length):
         """
@@ -101,6 +101,7 @@ class PID:
         # Prevent slack in the cable by setting control to 0 if the cable is shorter than its rest length
         slack = np.logical_and(current_length < rest_length, u < 0)
         u[slack] = 0
+        print("DEBUG PID: u =", u)
 
         # Return the control signal and the normalized position
         return u, position
