@@ -118,7 +118,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         self.prev_pos = None
         self.step_count = 0
 
-        # self.apply_random_perturbation()
+        self.apply_random_perturbation() #can comment
 
         for motor in self.cable_motors:
             motor.reset_omega_t()
@@ -174,18 +174,55 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
                 ctrl, _ = self.pids[i].update_control_by_target_norm_length(curr_length, lengths, rest_length)
                 controls[i] = ctrl
 
+        # self.forward()
+        # for i in range(len(self.cable_sites)):
+        #     # ... existing code ...
+        #     if controls is not None and i in self.actuated_ids:
+        #         # Find the position in the action vector
+        #         action_idx = list(self.actuated_ids).index(i)
+        #         ctrl = np.array(controls[action_idx])
+                
+        #         # Compute change in cable rest lengths
+        #         dl = self.cable_motors[action_idx].compute_cable_length_delta(ctrl, self.dt)
+        #         rest_length = rest_length - dl
+        #         self.mjc_model.tendon_lengthspring[i] = rest_length
+
         self.forward()
         for i in range(len(self.cable_sites)):
-            # ... existing code ...
             if controls is not None and i in self.actuated_ids:
                 # Find the position in the action vector
                 action_idx = list(self.actuated_ids).index(i)
                 ctrl = np.array(controls[action_idx])
                 
+                # Get the specific rest length for THIS cable
+                cable_rest_length = self.mjc_model.tendon_lengthspring[i, 0]
+                
                 # Compute change in cable rest lengths
                 dl = self.cable_motors[action_idx].compute_cable_length_delta(ctrl, self.dt)
-                rest_length = rest_length - dl
-                self.mjc_model.tendon_lengthspring[i] = rest_length
+                
+                # Update rest length for THIS cable only
+                new_rest_length = cable_rest_length - dl
+                
+                # Optional: Add bounds to prevent extreme contractions
+                min_length = 0.1  # Adjust based on your robot's geometry
+                max_length = 1.0  # Adjust based on your robot's geometry
+                new_rest_length = np.clip(new_rest_length, min_length, max_length)
+                
+                # Apply the new rest length
+                self.mjc_model.tendon_lengthspring[i] = new_rest_length
+                
+                # Debug (fixed for numpy arrays)
+                if isinstance(ctrl, np.ndarray):
+                    ctrl_val = ctrl.item() if ctrl.size == 1 else ctrl[0]
+                else:
+                    ctrl_val = ctrl
+                    
+                if isinstance(dl, np.ndarray):
+                    dl_val = dl.item() if dl.size == 1 else dl[0]
+                else:
+                    dl_val = dl
+
+                print("DL:", dl_val, "Control:", ctrl_val)
 
         mujoco.mj_step(self.mjc_model, self.mjc_data)
         self.forward()
@@ -220,7 +257,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         # Weighting individual reward components
         velocity_reward *= 10.0
         distance_reward *= 2.0
-        penalties *= 0.0
+        penalties *= 1.0  #Making this 1 did eliminate the oscillations, which is good
 
         reward = velocity_reward + distance_reward + penalties
         
