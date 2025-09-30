@@ -201,7 +201,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
                 dl = self.cable_motors[action_idx].compute_cable_length_delta(ctrl, self.dt)
                 
                 # Update rest length for THIS cable only
-                new_rest_length = cable_rest_length - dl
+                new_rest_length = cable_rest_length + dl  # Changed from - to +
                 
                 # Optional: Add bounds to prevent extreme contractions
                 min_length = 0.1  # Adjust based on your robot's geometry
@@ -255,8 +255,8 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         penalties = self.calculate_anti_exploit_penalties(robot_pos, controls) #0
         
         # Weighting individual reward components
-        velocity_reward *= 10.0
-        distance_reward *= 2.0
+        velocity_reward *= 2.0
+        distance_reward *= 10.0 
         penalties *= 1.0  #Making this 1 did eliminate the oscillations, which is good
 
         reward = velocity_reward + distance_reward + penalties

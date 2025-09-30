@@ -21,11 +21,20 @@ class DCMotor:
         self.winch_r = winch_r
         self.motor_state = MotorState()
 
-    def compute_cable_length_delta(self, control, delta_t, dim_scale=1.):
-        pre_omega = self.motor_state.omega_t.copy()
-        self.motor_state.omega_t = np.array(self.speed * self.max_omega * control).reshape(-1)
-        dl = (pre_omega + self.motor_state.omega_t) / 2. * self.winch_r * dim_scale * delta_t
-
+    def compute_cable_length_delta(self, ctrl, dt):
+        """
+        Compute change in cable length based on control signal.
+        Modified to support bidirectional control.
+        """
+        # Convert control signal [-1.0, 1.0] to motor speed
+        omega = ctrl * self.max_omega  # Can be positive or negative
+        
+        # Compute length change (REVERSED: negative dl = shortening, positive dl = extension)
+        dl = -omega * self.winch_r * dt  # Note the negative sign to reverse direction
+        
+        # Debug output
+        print(f"Motor: ctrl={ctrl:.3f}, omega={omega:.3f}, dl={dl:.5f}")
+        
         return dl
 
     def reset_omega_t(self):
