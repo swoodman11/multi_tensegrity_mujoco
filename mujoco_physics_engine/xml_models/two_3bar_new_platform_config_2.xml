@@ -48,6 +48,11 @@
     <camera name="front" pos="10.257 -19.949 12.477" xyaxes="0.886 0.463 0.000 -0.225 0.430 0.875"/>
     <camera name="top" pos="0.392 -0.869 53.543" quat="0.999964 0.00849908 0 0"/>
     <light name="mylight" pos="0 0 6" dir="0 0 -1"/>
+    <!-- World origin visual aids -->
+    <site name="world_origin" pos="0 0 0" size="0.01" type="sphere" rgba="1 1 1 1"/>
+    <geom name="x_axis" fromto="0 0 0 0.2 0 0" size="0.003" type="capsule" rgba="1 0 0 1" contype="0" conaffinity="0"/>
+    <geom name="y_axis" fromto="0 0 0 0 0.2 0" size="0.003" type="capsule" rgba="0 1 0 1" contype="0" conaffinity="0"/>
+    <geom name="z_axis" fromto="0 0 0 0 0 0.2" size="0.003" type="capsule" rgba="0 0 1 1" contype="0" conaffinity="0"/>
     <body name="t1_r01" pos="-1.26213974 -0.23564522  1.54703196" quat="0.76834435  0.33184372 -0.53958135 -0.09153509">
       <joint name="t1_move01" type="free"/>
       <geom name="t1_r01" size="0.0159 1.475" quat="1.02961e-09 -0.933251 0.359226 -9.46508e-10" type="cylinder" mass="6.5" rgba="1 1 1 1"/>
@@ -299,22 +304,22 @@
     </spatial>
 
 <!--    Used to quickly find potential attachment points-->
-<!--    <spatial name="connect0" stiffness="100000" springlength="0.3">-->
-<!--      <site site="t2_s0"/>-->
-<!--      <site site="t1_s2"/>-->
-<!--    </spatial>-->
-<!--    <spatial name="connect1" stiffness="100000" springlength="0.3">-->
-<!--      <site site="t2_s1"/>-->
-<!--      <site site="t1_s1"/>-->
-<!--    </spatial>-->
-<!--    <spatial name="connect2" stiffness="100000" springlength="0.3">-->
-<!--      <site site="t2_s3"/>-->
-<!--      <site site="t1_s5"/>-->
-<!--    </spatial>-->
-<!--    <spatial name="connect3" stiffness="100000" springlength="0.3">-->
-<!--      <site site="t2_s4"/>-->
-<!--      <site site="t1_s4"/>-->
-<!--    </spatial>-->
+   <!-- <spatial name="connect0" stiffness="100000" springlength="0.3"> -->
+     <!-- <site site="t2_s0"/> -->
+     <!-- <site site="t1_s2"/> -->
+   <!-- </spatial> -->
+   <!-- <spatial name="connect1" stiffness="100000" springlength="0.3"> -->
+     <!-- <site site="t2_s1"/> -->
+     <!-- <site site="t1_s1"/> -->
+   <!-- </spatial> -->
+   <!-- <spatial name="connect2" stiffness="100000" springlength="0.3"> -->
+     <!-- <site site="t2_s3"/> -->
+     <!-- <site site="t1_s5"/> -->
+   <!-- </spatial> -->
+   <!-- <spatial name="connect3" stiffness="100000" springlength="0.3"> -->
+     <!-- <site site="t2_s4"/> -->
+     <!-- <site site="t1_s4"/> -->
+    <!-- </spatial> -->
   </tendon>
 
   <equality>

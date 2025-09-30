@@ -65,7 +65,7 @@ class AbstractMuJoCoSimulator:
 if __name__ == '__main__':
     import shutil
 
-    xml_path = Path("xml_models/two_3bar_new_platform_config_1.xml")
+    xml_path = Path("xml_models/two_3bar_new_platform_config_2.xml")
     sim = AbstractMuJoCoSimulator(xml_path, visualize=True)
 
     for _ in range(500):

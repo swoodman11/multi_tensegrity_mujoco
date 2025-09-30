@@ -25,8 +25,8 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
                  obs_dim: int | None = None,
                  obs_mode: str = "tier2"):
         super().__init__(xml_path, visualize, render_size, render_fps)
-        self.min_cable_length = 0.6 # unit: meters*10
-        self.max_cable_length = 2.4 # unit: meters*10
+        self.min_cable_length = 0.6 # unit: meters*10 # NOTE: was 0.6 but changed to match PID default
+        self.max_cable_length = 1.6 # unit: meters*10 # NOTE: was 2.4 but changed to match PID default
         self.n_actuators = num_actuated_cables
         self.curr_ctrl = [0.0 for _ in range(num_actuated_cables)]
         self.pids = [PID() for _ in range(num_actuated_cables)] # NOTE: should this take in the min and max lengths?
@@ -170,10 +170,11 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
 
             # HACK to have tendons only apply tension but not compression forces
             # NOTE: If connected points are connected using tendons, will they be affected by this hack?
-            s0 = self.mjc_data.sensor(f"pos_{sites[0]}").data
-            s1 = self.mjc_data.sensor(f"pos_{sites[1]}").data
-            dist = np.linalg.norm(s1 - s0)
-            self.mjc_model.tendon_stiffness[i] = 0 if dist < rest_length else self.stiffness[i]
+            # QUESTION: does the tendon_stiffness ever get reset to not be zero?
+            # s0 = self.mjc_data.sensor(f"pos_{sites[0]}").data
+            # s1 = self.mjc_data.sensor(f"pos_{sites[1]}").data
+            # dist = np.linalg.norm(s1 - s0)
+            # self.mjc_model.tendon_stiffness[i] = 0 if dist < rest_length else self.stiffness[i]
 
             if controls is not None and i in self.actuated_ids:
                 ctrl = np.array(controls[ctrl_idx])
@@ -200,13 +201,26 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
             xy_displacement = robot_pos[:2] - self.prev_pos[:2]  # [x, y] only
             xy_speed = np.linalg.norm(xy_displacement) / self.dt
             
-            velocity_reward = xy_speed * 50.0  # Reward any XY movement with large magnitude
+            velocity_reward = xy_speed # Reward any XY movement with large magnitude
+
+        # if hasattr(self, 'prev_pos') and self.prev_pos is not None:
+        #     # Calculate XY plane displacement
+        #     xy_displacement = robot_pos[:2] - self.prev_pos[:2]  # [x, y] only
+        #     # Reward positive forward velocity (assuming +x is forward direction)
+        #     forward_velocity = xy_displacement[0] / self.dt  # x-component of velocity
+        #     if forward_velocity > 0:
+        #         velocity_reward = forward_velocity # Additional reward for forward movement
         
         # Add distance-based reward (total distance from origin)
         distance_reward = self.calculate_omnidirectional_distance_reward(robot_pos)
 
         penalties = self.calculate_anti_exploit_penalties(robot_pos, controls) #0
         
+        # Weighting individual reward components
+        velocity_reward *= 10.0
+        distance_reward *= 2.0
+        penalties *= 0.0
+
         reward = velocity_reward + distance_reward + penalties
         
         # # Calculate total forward distance reward
@@ -250,7 +264,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
             self.max_distance_from_origin = xy_distance_from_origin
         
         # Base distance reward (encourages staying away from origin)
-        base_distance_reward = xy_distance_from_origin * 1.0
+        base_distance_reward = xy_distance_from_origin
 
                 
         
@@ -320,17 +334,17 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         """Penalties to prevent common exploitation behaviors"""
         penalties = 0.0
         
-        # 1. Prevent excessive bouncing (z-axis exploitation)
-        if hasattr(self, 'prev_pos') and self.prev_pos is not None:
-            z_velocity = abs((robot_pos[2] - self.prev_pos[2]) / self.dt)
-            if z_velocity > 1.0:  # Too much vertical movement
-                penalties -= z_velocity * 50.0
+        # # 1. Prevent excessive bouncing (z-axis exploitation)
+        # if hasattr(self, 'prev_pos') and self.prev_pos is not None:
+        #     z_velocity = abs((robot_pos[2] - self.prev_pos[2]) / self.dt)
+        #     if z_velocity > 1.0:  # Too much vertical movement
+        #         penalties -= z_velocity * 5.0
         
         # 2. Prevent rapid oscillations in controls
         if hasattr(self, 'prev_controls'):
             control_change = np.sum(np.abs(controls - self.prev_controls))
             if control_change > 2.0:  # Too rapid changes
-                penalties -= control_change * 20.0
+                penalties -= control_change * 2.0
         self.prev_controls = controls.copy()
         
         # 3. Energy efficiency penalty
