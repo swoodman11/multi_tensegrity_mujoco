@@ -7,7 +7,7 @@ from pathlib import Path
 from mujoco_physics_engine.tensegrity_mjc_simulation import TensegrityMuJoCoSimulator as Simulator # Adjust import if needed
 
 class TensegrityEnv(gym.Env):
-    def __init__(self, obs_dim=104, visualize=False):
+    def __init__(self, obs_dim=None, visualize=False, obs_mode: str = "tier2"):
         super().__init__()
         
         # Setup the simulator with Path object
@@ -15,6 +15,7 @@ class TensegrityEnv(gym.Env):
         self.sim = Simulator(
             xml_path=xml_path,
             obs_dim=obs_dim,
+            obs_mode=obs_mode,
             visualize=visualize,
             render_size=(800, 600),
             render_fps=30
@@ -26,9 +27,7 @@ class TensegrityEnv(gym.Env):
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(self.sim.obs_dim,), dtype=np.float32)
         
         # Define action spaces
-        self.num_actuators = 12  # Example: 12 muscle cables
-        # Action space consisting of motor turning commands
-        # self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(self.num_actuators,), dtype=np.float32)
+        self.num_actuators = 12  # 12 actuated cables
         # Action space consisting of normalized cable target lengths
         self.action_space = spaces.Box(low=0.0, high=1.0, shape=(self.num_actuators,), dtype=np.float32)
 

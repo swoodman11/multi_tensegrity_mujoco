@@ -22,7 +22,8 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
                  render_fps: int = 20,
                  num_actuated_cables: int = 12,
                  num_rods: int = 3,
-                 obs_dim: int = 104):
+                 obs_dim: int | None = None,
+                 obs_mode: str = "tier2"):
         super().__init__(xml_path, visualize, render_size, render_fps)
         self.min_cable_length = 0.6 # unit: meters*10
         self.max_cable_length = 2.4 # unit: meters*10
@@ -34,7 +35,9 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         self.n_cables = self.mjc_model.tendon_stiffness.shape[0]
         self.actuated_ids = (list(range(num_actuated_cables // 2))
                              + list(range(self.n_cables // 2, self.n_cables // 2 + num_actuated_cables // 2)))
-        self.obs_dim = obs_dim  # Dimension of observation space
+        # Observation mode: 'tier2' (96D) or 'legacy104' (104D)
+        self.obs_mode = obs_mode if obs_mode in ("tier2", "legacy104") else "tier2"
+        self.obs_dim = (96 if self.obs_mode == "tier2" else 104) if obs_dim is None else obs_dim
 
         # Tuple of cable end point of attachment sites' names
         self.cable_sites = [
@@ -80,6 +83,15 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         ]
         self.stiffness = self.mjc_model.tendon_stiffness.copy()  # Copy of original cable stiffnesses
 
+        # --- Buffers and mappings for Tier-2 observation ---
+        self.prev_action = np.zeros(self.n_actuators, dtype=np.float32)
+        self.prev_cable_lengths = np.zeros(self.n_actuators, dtype=np.float32)
+        self.prev_COM_pos = None
+        # strain sensors: assume first 18 tendons by default
+        self.strain_tendon_ids = list(range(min(18, self.n_cables)))
+        # IMU (rods) geom names present in XML sensors
+        self.imu_geom_names = ["t1_r01", "t1_r23", "t1_r45", "t2_r01", "t2_r23", "t2_r45"]
+
     def bring_to_grnd(self):
         """
         Finds the z-translation that would bring the lowest end cap to the ground, and aplies it to the robot
@@ -99,22 +111,20 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         super().reset()
         self.bring_to_grnd()
         # Store the original state
-
-        
-        
-        
         self.prev_pos = None
         self.step_count = 0
 
-        self.apply_random_perturbation()
+        # self.apply_random_perturbation()
 
         for motor in self.cable_motors:
             motor.reset_omega_t()
         
-        # Return observation for RL (ADD THIS LINE):
-        # obs = self.get_endpts().flatten()
-        # return obs[:self.obs_dim] if hasattr(self, 'obs_dim') else obs[:78]
-        #ADD NEW OBS HERE STEPH
+        # Initialize Tier-2 buffers
+        self.prev_action[:] = 0.0
+        self.prev_cable_lengths = self._get_actuated_cable_lengths()
+        self.prev_COM_pos = self._compute_COM_position()
+
+        # Return observation for RL using selected mode
         observation = self.get_observation()
         return observation
 
@@ -132,10 +142,8 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         """
         ctrl_idx = 0
 
-        # 
-
-
         # NOTE: double check that target_lengths is in [0, 1] range
+
         # Convert target_lengths to controls in [-1, 1]
         if target_lengths is not None:
             controls = np.zeros(self.n_actuators)  # NumPy array
@@ -161,6 +169,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
             rest_length = self.mjc_model.tendon_lengthspring[i, 0]
 
             # HACK to have tendons only apply tension but not compression forces
+            # NOTE: If connected points are connected using tendons, will they be affected by this hack?
             s0 = self.mjc_data.sensor(f"pos_{sites[0]}").data
             s1 = self.mjc_data.sensor(f"pos_{sites[1]}").data
             dist = np.linalg.norm(s1 - s0)
@@ -191,12 +200,12 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
             xy_displacement = robot_pos[:2] - self.prev_pos[:2]  # [x, y] only
             xy_speed = np.linalg.norm(xy_displacement) / self.dt
             
-            velocity_reward = xy_speed * 5.0  # Reward any XY movement
+            velocity_reward = xy_speed * 50.0  # Reward any XY movement with large magnitude
         
         # Add distance-based reward (total distance from origin)
         distance_reward = self.calculate_omnidirectional_distance_reward(robot_pos)
 
-        penalties = self.calculate_anti_exploit_penalties(robot_pos, controls) #0 
+        penalties = self.calculate_anti_exploit_penalties(robot_pos, controls) #0
         
         reward = velocity_reward + distance_reward + penalties
         
@@ -207,8 +216,8 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         self.prev_pos = robot_pos.copy()
         self.step_count = getattr(self, 'step_count', 0) + 1
 
-        # USE COMPREHENSIVE OBSERVATION METHOD
-        observation = self.get_observation()  # This calls the 78-dim method
+        # Build observation based on selected mode
+        observation = self.get_observation()
         
         done = False
         info = {}
@@ -315,37 +324,43 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         if hasattr(self, 'prev_pos') and self.prev_pos is not None:
             z_velocity = abs((robot_pos[2] - self.prev_pos[2]) / self.dt)
             if z_velocity > 1.0:  # Too much vertical movement
-                penalties -= z_velocity * 5.0
+                penalties -= z_velocity * 50.0
         
         # 2. Prevent rapid oscillations in controls
         if hasattr(self, 'prev_controls'):
             control_change = np.sum(np.abs(controls - self.prev_controls))
             if control_change > 2.0:  # Too rapid changes
-                penalties -= control_change * 2.0
+                penalties -= control_change * 20.0
         self.prev_controls = controls.copy()
         
         # 3. Energy efficiency penalty
-        energy_cost = np.sum(np.abs(controls)) * 0.01
-        penalties -= energy_cost
+        # energy_cost = np.sum(np.abs(controls)) * 0.01
+        # penalties -= energy_cost
         
         # 4. FIX: Use correct body name for stability check
         # Choose one of the robot bodies (e.g., t1_r01) for orientation check
-        try:
-            platform_quat = self.mjc_data.body("t1_r01").xquat  # Use actual body name
-            tilt_penalty = abs(platform_quat[1]) + abs(platform_quat[2])  # Penalize roll/pitch
-            penalties -= tilt_penalty * 10.0
-        except KeyError:
-            # Fallback: skip tilt penalty if body not found
-            pass
-        
-        penalties = penalties * 0.1
+        # try:
+        #     platform_quat = self.mjc_data.body("t1_r01").xquat  # Use actual body name
+        #     tilt_penalty = abs(platform_quat[1]) + abs(platform_quat[2])  # Penalize roll/pitch
+        #     penalties -= tilt_penalty * 10.0
+        # except KeyError:
+        #     # Fallback: skip tilt penalty if body not found
+        #     pass
+
+        penalties = penalties # * 0.1
 
         return penalties
 
     def get_observation(self):
+        """Dispatch observation based on obs_mode."""
+        if self.obs_mode == "tier2":
+            return self.get_observation_tier2()
+        return self.get_observation_legacy104()
+
+    def get_observation_legacy104(self):
         """
-        Comprehensive observation for RL training
-        Returns 78-dimensional observation vector
+        Legacy comprehensive observation
+        Returns 104-dimensional observation vector (42 robot state + 24 cable + 36 endpoints + padding)
         """
         observation = []
         
@@ -361,14 +376,14 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         end_effector_state = self.get_end_effector_state()
         observation.extend(end_effector_state)
         
-        # 4. Time-based features (2 dims): simulation time + step count
-        sim_time = self.mjc_data.time
-        step_normalized = (getattr(self, 'step_count', 0) % 1000) / 1000.0  # Normalize step count
-        observation.extend([sim_time, step_normalized])
+        # # 4. Time-based features (2 dims): simulation time + step count
+        # sim_time = self.mjc_data.time
+        # step_normalized = (getattr(self, 'step_count', 0) % 1000) / 1000.0  # Normalize step count
+        # observation.extend([sim_time, step_normalized])
         
         # Verify dimension consistency
         obs_array = np.array(observation, dtype=np.float32)
-        expected_dim = getattr(self, 'obs_dim', 104)
+        expected_dim = 104
         
         if len(obs_array) != expected_dim:
             print(f"⚠️ OBSERVATION DIMENSION MISMATCH: Got {len(obs_array)}, expected {expected_dim}")
@@ -436,6 +451,136 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
             return end_pts.flatten()
         except:
             return [0.0] * 18  # 6 endpoints × 3D fallback
+
+    # --------------------------- Tier-2 Observation ---------------------------
+    def _get_actuated_cable_lengths(self):
+        lengths = []
+        for idx in self.actuated_ids:
+            try:
+                sites = self.cable_sites[idx]
+                s0 = self.mjc_data.sensor(f"pos_{sites[0]}").data
+                s1 = self.mjc_data.sensor(f"pos_{sites[1]}").data
+                lengths.append(np.linalg.norm(s1 - s0))
+            except Exception:
+                lengths.append(0.0)
+        return np.asarray(lengths, dtype=np.float32)
+
+    def _get_strain_extensions(self):
+        # (current_length - rest_length) / rest_length for selected tendons
+        exts = []
+        for tid in self.strain_tendon_ids:
+            try:
+                sites = self.cable_sites[tid]
+                s0 = self.mjc_data.sensor(f"pos_{sites[0]}").data
+                s1 = self.mjc_data.sensor(f"pos_{sites[1]}").data
+                curr = np.linalg.norm(s1 - s0)
+                rest = self.mjc_model.tendon_lengthspring[tid, 0]
+                val = 0.0 if rest <= 1e-6 else (curr - rest) / rest
+                exts.append(val)
+            except Exception:
+                exts.append(0.0)
+        return np.clip(np.asarray(exts, dtype=np.float32), -1.0, 2.0)
+
+    def _compute_COM_position(self):
+        eps = self.get_endpts()
+        return eps.mean(axis=0)
+
+    def _compute_COM_velocities(self):
+        curr_COM = self._compute_COM_position()
+        if self.prev_COM_pos is None:
+            lin_vel = np.zeros(3, dtype=np.float32)
+        else:
+            lin_vel = (curr_COM - self.prev_COM_pos) / self.dt
+        self.prev_COM_pos = curr_COM
+
+        # Angular velocity: use global qvel rotational components if available
+        if self.mjc_data.qvel.shape[0] >= 3:
+            ang_vel = self.mjc_data.qvel[:3].copy()
+        else:
+            ang_vel = np.zeros(3, dtype=np.float32)
+        return lin_vel.astype(np.float32), ang_vel.astype(np.float32)
+
+    def _quat_to_rot(self, quat):
+        # MuJoCo quaternions: [w,x,y,z]
+        w, x, y, z = quat
+        return np.array([
+            [1 - 2*(y*y + z*z), 2*(x*y - z*w),     2*(x*z + y*w)],
+            [2*(x*y + z*w),     1 - 2*(x*x + z*z), 2*(y*z - x*w)],
+            [2*(x*z - y*w),     2*(y*z + x*w),     1 - 2*(x*x + y*y)]
+        ], dtype=np.float32)
+
+    def _get_IMU_gravity_vectors(self):
+        grav = np.array([0, 0, -1.0], dtype=np.float32)
+        vecs = []
+        for g in self.imu_geom_names:
+            try:
+                quat = self.mjc_data.sensor(f"quat_{g}").data  # [w,x,y,z]
+                R = self._quat_to_rot(quat)
+                g_local = R.T @ grav
+                vecs.append(g_local.astype(np.float32))
+            except Exception:
+                vecs.append(np.zeros(3, dtype=np.float32))
+        return np.asarray(vecs, dtype=np.float32).reshape(-1)
+
+    def _get_IMU_angular_velocities(self):
+        angs = []
+        for g in self.imu_geom_names:
+            try:
+                ang = self.mjc_data.sensor(f"angvel_{g}").data
+                angs.append(ang.astype(np.float32))
+            except Exception:
+                angs.append(np.zeros(3, dtype=np.float32))
+        return np.asarray(angs, dtype=np.float32).reshape(-1)
+
+    def get_observation_tier2(self):
+        """Tier-2 96D observation without contacts/accelerometers."""
+        # 1. Cable lengths (normalized)
+        cable_lengths = self._get_actuated_cable_lengths()
+        denom = max(self.max_cable_length - self.min_cable_length, 1e-6)
+        cable_lengths_norm = np.clip((cable_lengths - self.min_cable_length) / denom, 0.0, 1.0)
+
+        # 2. Cable length rates (normalized finite diff)
+        cable_rates = (cable_lengths - self.prev_cable_lengths) / self.dt
+        rate_scale = denom
+        cable_rates_norm = np.clip(cable_rates / rate_scale, -1.0, 1.0)
+        self.prev_cable_lengths = cable_lengths.copy()
+
+        # 3. Previous action (normalized targets)
+        prev_action = self.prev_action.copy()
+
+        # 4. Strain sensor normalized extensions (18)
+        strain_exts = self._get_strain_extensions()
+
+        # 5. IMU gravity vectors (6*3)
+        imu_grav = self._get_IMU_gravity_vectors()
+
+        # 6. IMU angular velocities (6*3), scaled
+        imu_ang = self._get_IMU_angular_velocities()
+        imu_ang_norm = np.clip(imu_ang / 10.0, -1.0, 1.0)
+
+        # 7 & 8. COM linear and angular velocities (scaled)
+        com_lin_vel, com_ang_vel = self._compute_COM_velocities()
+        com_lin_vel_norm = np.clip(com_lin_vel / 1.0, -3.0, 3.0)
+        com_ang_vel_norm = np.clip(com_ang_vel / 10.0, -1.0, 1.0)
+
+        parts = [
+            cable_lengths_norm,          # 12
+            cable_rates_norm,            # 12
+            prev_action,                 # 12
+            strain_exts,                 # 18
+            imu_grav,                    # 18
+            imu_ang_norm,                # 18
+            com_lin_vel_norm,            # 3
+            com_ang_vel_norm             # 3
+        ]
+        obs = np.concatenate(parts).astype(np.float32)
+        # Ensure exact 96 dims
+        if obs.shape[0] != 96:
+            if obs.shape[0] < 96:
+                obs = np.pad(obs, (0, 96 - obs.shape[0]))
+            else:
+                obs = obs[:96]
+        return np.nan_to_num(obs, nan=0.0, posinf=1.0, neginf=-1.0)
 
 
 class MultiProcTensegrityMujocoSimulator:

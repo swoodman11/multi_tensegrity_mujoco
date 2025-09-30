@@ -6,3 +6,4 @@ tqdm==4.67.1
 stable-baselines3
 gymnasium
 tensorboard
+matplotlib

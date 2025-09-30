@@ -2,9 +2,8 @@ from stable_baselines3 import PPO
 from tensegrity_env import TensegrityEnv
 from datetime import datetime
 
-# Set observation dimension
-obs_dim = 104
-env = TensegrityEnv(obs_dim=obs_dim)
+# Use Tier-2 observation (96-D). For legacy 104-D, pass obs_mode="legacy104".
+env = TensegrityEnv(obs_mode="tier2")
 
 model = PPO("MlpPolicy", env, verbose=1, tensorboard_log="./ppo_tensegrity_tensorboard/",device='cpu')
 model.learn(total_timesteps=100_000)
