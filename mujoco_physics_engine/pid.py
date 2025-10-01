@@ -1,13 +1,19 @@
 import numpy as np
 
+def debug_print(message, filename="pid.py", debug_enabled=False):
+    """Print debug messages with filename prefix if debug is enabled"""
+    if debug_enabled:
+        print(f"DEBUG {filename}: {message}")
+
 
 class PID:
-    def __init__(self, Kp=2.0, Ki=0.0, Kd=1.0, dt=0.01, RANGE=[-1.0, 1.0]):
+    def __init__(self, Kp=2.0, Ki=0.0, Kd=1.0, dt=0.01, RANGE=[-1.0, 1.0], debug_enabled=False):
         self.Kp = Kp
         self.Ki = Ki
         self.Kd = Kd
         self.dt = dt
         self.RANGE = RANGE
+        self.debug_enabled = debug_enabled
         self.last_error = None
         self.cum_error = None
         self.u = np.array([0.0])
@@ -62,7 +68,7 @@ class PID:
         # Negative = contract, Positive = extend (opposite of current logic)
         self.u = np.clip(self.u, -1.0, 1.0)
         
-        print(f"PID: curr={curr_length:.3f}, target={target_length:.3f}, error={error:.3f}, u={self.u}")
+        debug_print(f"PID: curr={curr_length:.3f}, target={target_length:.3f}, error={error:.3f}, u={self.u}", "pid.py", self.debug_enabled)
         return self.u, None
 
     def reset(self):

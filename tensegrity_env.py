@@ -6,9 +6,16 @@ from pathlib import Path
 # Import your simulator
 from mujoco_physics_engine.tensegrity_mjc_simulation import TensegrityMuJoCoSimulator as Simulator # Adjust import if needed
 
+def debug_print(message, filename="tensegrity_env.py", debug_enabled=False):
+    """Print debug messages with filename prefix if debug is enabled"""
+    if debug_enabled:
+        print(f"DEBUG {filename}: {message}")
+
 class TensegrityEnv(gym.Env):
-    def __init__(self, obs_dim=None, visualize=False, obs_mode: str = "tier2"):
+    def __init__(self, obs_dim=None, visualize=False, obs_mode: str = "tier2", debug_enabled=False):
         super().__init__()
+        
+        self.debug_enabled = debug_enabled
         
         # Setup the simulator with Path object
         xml_path = Path("mujoco_physics_engine/xml_models/two_3bar_new_platform_config_1.xml")
@@ -18,10 +25,11 @@ class TensegrityEnv(gym.Env):
             obs_mode=obs_mode,
             visualize=visualize,
             render_size=(800, 600),
-            render_fps=30
+            render_fps=30,
+            debug_enabled=debug_enabled
         )
         
-        print(f"DEBUG: Simulator.__init__ called with visualize={visualize}")
+        debug_print(f"Simulator.__init__ called with visualize={visualize}", "tensegrity_env.py", debug_enabled)
 
         # Define observation spaces
         self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(self.sim.obs_dim,), dtype=np.float32)
@@ -53,7 +61,7 @@ class TensegrityEnv(gym.Env):
         try:
             return self.sim.render(mode)  # Call simulator's render, not self
         except Exception as e:
-            print(f"Render failed: {e}")
+            debug_print(f"Render failed: {e}", "tensegrity_env.py", self.debug_enabled)
             return None
 
     def close(self):

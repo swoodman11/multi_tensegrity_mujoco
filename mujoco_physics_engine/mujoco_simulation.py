@@ -7,6 +7,11 @@ import cv2
 import mujoco
 import numpy as np
 
+def debug_print(message, filename="mujoco_simulation.py", debug_enabled=False):
+    """Print debug messages with filename prefix if debug is enabled"""
+    if debug_enabled:
+        print(f"DEBUG {filename}: {message}")
+
 
 class AbstractMuJoCoSimulator:
     """
@@ -74,4 +79,4 @@ if __name__ == '__main__':
 
     qpos = sim.mjc_data.qpos.reshape(-1, 7)
     for i in range(qpos.shape[0]):
-        print(" ".join([str(round(qpos[i, j].item(), 7)) for j in range(7)]))
+        debug_print(" ".join([str(round(qpos[i, j].item(), 7)) for j in range(7)]), "mujoco_simulation.py", True)  # Enable debug for main test

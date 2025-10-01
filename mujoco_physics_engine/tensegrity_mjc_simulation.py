@@ -10,6 +10,11 @@ from mujoco_physics_engine.cable_motor import DCMotor
 from mujoco_physics_engine.mujoco_simulation import AbstractMuJoCoSimulator
 from mujoco_physics_engine.pid import PID
 
+def debug_print(message, filename="tensegrity_mjc_simulation.py", debug_enabled=False):
+    """Print debug messages with filename prefix if debug is enabled"""
+    if debug_enabled:
+        print(f"DEBUG {filename}: {message}")
+
 
 class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
     """
@@ -23,14 +28,16 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
                  num_actuated_cables: int = 12,
                  num_rods: int = 3,
                  obs_dim: int | None = None,
-                 obs_mode: str = "tier2"):
+                 obs_mode: str = "tier2",
+                 debug_enabled: bool = False):
         super().__init__(xml_path, visualize, render_size, render_fps)
+        self.debug_enabled = debug_enabled
         self.min_cable_length = 0.6 # unit: meters*10 # NOTE: was 0.6 but changed to match PID default
         self.max_cable_length = 1.6 # unit: meters*10 # NOTE: was 2.4 but changed to match PID default
         self.n_actuators = num_actuated_cables
         self.curr_ctrl = [0.0 for _ in range(num_actuated_cables)]
-        self.pids = [PID() for _ in range(num_actuated_cables)] # NOTE: should this take in the min and max lengths?
-        self.cable_motors = [DCMotor() for _ in range(num_actuated_cables)]
+        self.pids = [PID(debug_enabled=self.debug_enabled) for _ in range(num_actuated_cables)] # NOTE: should this take in the min and max lengths?
+        self.cable_motors = [DCMotor(debug_enabled=self.debug_enabled) for _ in range(num_actuated_cables)]
         self.n_rods = num_rods
         self.n_cables = self.mjc_model.tendon_stiffness.shape[0]
         # NOTE: start here for debugging the zero inputs 09/30/2025
@@ -38,7 +45,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
                              + list(range(self.n_cables // 2, self.n_cables // 2 + num_actuated_cables // 2)))
         # self.actuated_ids = [0,1,2,6,7,8,9,10,11,15,16,17] # specific to two_3bar_new_platform_config_1.xml
         self.actuated_ids = [0, 1, 2, 3, 4, 5, 15, 16, 17, 18, 19, 20]  # All vertex-to-bar cables
-        print(self.actuated_ids)
+        debug_print(f"actuated_ids: {self.actuated_ids}", "tensegrity_mjc_simulation.py", self.debug_enabled)
         # Observation mode: 'tier2' (96D) or 'legacy104' (104D)
         self.obs_mode = obs_mode if obs_mode in ("tier2", "legacy104") else "tier2"
         self.obs_dim = (96 if self.obs_mode == "tier2" else 104) if obs_dim is None else obs_dim
@@ -165,9 +172,9 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
                 # Compute control signal using PID
                 s0 = self.mjc_data.sensor(f"pos_{self.cable_sites[self.actuated_ids[i]][0]}").data
                 s1 = self.mjc_data.sensor(f"pos_{self.cable_sites[self.actuated_ids[i]][1]}").data
-                print(self.actuated_ids[i])
-                print(self.cable_sites[self.actuated_ids[i]])
-                print(self.cable_sites[self.actuated_ids[i]][0])
+                debug_print(f"actuated_ids[{i}]: {self.actuated_ids[i]}", "tensegrity_mjc_simulation.py", self.debug_enabled)
+                debug_print(f"cable_sites[{self.actuated_ids[i]}]: {self.cable_sites[self.actuated_ids[i]]}", "tensegrity_mjc_simulation.py", self.debug_enabled)
+                debug_print(f"cable_sites[{self.actuated_ids[i]}][0]: {self.cable_sites[self.actuated_ids[i]][0]}", "tensegrity_mjc_simulation.py", self.debug_enabled)
                 curr_length = np.linalg.norm(s1 - s0)
                 
 
@@ -222,7 +229,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
                 else:
                     dl_val = dl
 
-                print("DL:", dl_val, "Control:", ctrl_val)
+                debug_print(f"DL: {dl_val}, Control: {ctrl_val}", "tensegrity_mjc_simulation.py", self.debug_enabled)
 
         mujoco.mj_step(self.mjc_model, self.mjc_data)
         self.forward()
@@ -281,7 +288,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         Returns the current position of the robot.
         """
         self.forward()
-        print("Tensegrity positions: ", self.mjc_data.qpos)
+        debug_print(f"Tensegrity positions: {self.mjc_data.qpos}", "tensegrity_mjc_simulation.py", self.debug_enabled)
         return self.mjc_data.qpos[:3]  # Assuming the first three elements represent the robot's position
 
     def calculate_omnidirectional_distance_reward(self, robot_pos):
@@ -342,7 +349,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
             return frame
             
         except Exception as e:
-            print(f"Rendering failed: {e}")
+            debug_print(f"Rendering failed: {e}", "tensegrity_mjc_simulation.py", self.debug_enabled)
             return None
 
     def close(self):
@@ -438,7 +445,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         expected_dim = 104
         
         if len(obs_array) != expected_dim:
-            print(f"⚠️ OBSERVATION DIMENSION MISMATCH: Got {len(obs_array)}, expected {expected_dim}")
+            debug_print(f"⚠️ OBSERVATION DIMENSION MISMATCH: Got {len(obs_array)}, expected {expected_dim}", "tensegrity_mjc_simulation.py", self.debug_enabled)
             # Pad or truncate to match expected dimension
             if len(obs_array) < expected_dim:
                 obs_array = np.pad(obs_array, (0, expected_dim - len(obs_array)))

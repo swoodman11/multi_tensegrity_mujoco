@@ -1,7 +1,7 @@
 <mujoco model="TT (v1.31)">
   <compiler angle="radian"/>
 
-  <option timestep="0.01" cone="elliptic">
+  <option timestep="0.04" cone="elliptic">
     <flag frictionloss="disable"/>
   </option>
 
