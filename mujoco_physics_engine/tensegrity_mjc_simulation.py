@@ -41,9 +41,8 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         self.n_rods = num_rods
         self.n_cables = self.mjc_model.tendon_stiffness.shape[0]
         # NOTE: start here for debugging the zero inputs 09/30/2025
-        self.actuated_ids = (list(range(num_actuated_cables // 2))
-                             + list(range(self.n_cables // 2, self.n_cables // 2 + num_actuated_cables // 2)))
-        # self.actuated_ids = [0,1,2,6,7,8,9,10,11,15,16,17] # specific to two_3bar_new_platform_config_1.xml
+        # self.actuated_ids = (list(range(num_actuated_cables // 2))
+        #                      + list(range(self.n_cables // 2, self.n_cables // 2 + num_actuated_cables // 2)))
         self.actuated_ids = [0, 1, 2, 3, 4, 5, 15, 16, 17, 18, 19, 20]  # All vertex-to-bar cables
         debug_print(f"actuated_ids: {self.actuated_ids}", "tensegrity_mjc_simulation.py", self.debug_enabled)
         # Observation mode: 'tier2' (96D) or 'legacy104' (104D)
@@ -156,7 +155,6 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         # NOTE: double check that target_lengths is in [0, 1] range
 
         # Adding some debugging here (Setph)
-        
 
         # Convert target_lengths to controls in [-1, 1]
         if target_lengths is not None:
@@ -178,8 +176,9 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
                 curr_length = np.linalg.norm(s1 - s0)
                 
 
-                ctrl, _ = self.pids[i].update_control_by_target_norm_length(curr_length, lengths, rest_length)
-                controls[i] = ctrl
+                ctrl, _ = self.pids[i].update_control_by_target_norm_length(curr_length, lengths, rest_length,self.min_cable_length, self.max_cable_length)
+                controls[i] = -1.0*ctrl
+                # print(f"PID Control for cable {i} (actuated_id {self.actuated_ids[i]}): {ctrl}, Target norm length: {lengths}, Current length: {curr_length}, Rest length: {rest_length}")
 
         # self.forward()
         # for i in range(len(self.cable_sites)):
@@ -211,12 +210,11 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
                 new_rest_length = cable_rest_length + dl  # Changed from - to +
                 
                 # Optional: Add bounds to prevent extreme contractions
-                min_length = 0.1  # Adjust based on your robot's geometry
-                max_length = 1.0  # Adjust based on your robot's geometry
-                new_rest_length = np.clip(new_rest_length, min_length, max_length)
+                new_rest_length = np.clip(new_rest_length, self.min_cable_length, self.max_cable_length)
                 
                 # Apply the new rest length
                 self.mjc_model.tendon_lengthspring[i] = new_rest_length
+                # print(f"Cable {i} (actuated_id {self.actuated_ids[action_idx]}): Rest length updated from {cable_rest_length} to {new_rest_length} using dl={dl} and ctrl={ctrl}")
                 
                 # Debug (fixed for numpy arrays)
                 if isinstance(ctrl, np.ndarray):
@@ -262,9 +260,9 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         penalties = self.calculate_anti_exploit_penalties(robot_pos, controls) #0
         
         # Weighting individual reward components
-        velocity_reward *= 2.0
-        distance_reward *= 10.0 
-        penalties *= 1.0  #Making this 1 did eliminate the oscillations, which is good
+        velocity_reward *= 4.0
+        distance_reward *= 15.0 
+        penalties *= 0.5  #Making this 1 did eliminate the oscillations, which is good
 
         reward = velocity_reward + distance_reward + penalties
         
@@ -379,7 +377,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         """Penalties to prevent common exploitation behaviors"""
         penalties = 0.0
         
-        # # 1. Prevent excessive bouncing (z-axis exploitation)
+        # 1. Prevent excessive bouncing (z-axis exploitation)
         # if hasattr(self, 'prev_pos') and self.prev_pos is not None:
         #     z_velocity = abs((robot_pos[2] - self.prev_pos[2]) / self.dt)
         #     if z_velocity > 1.0:  # Too much vertical movement

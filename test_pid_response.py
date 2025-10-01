@@ -12,7 +12,7 @@ import time
 
 from mujoco_physics_engine.tensegrity_mjc_simulation import TensegrityMuJoCoSimulator
 
-def test_pid_response_step_input(duration_seconds=5.0, target_length=0.7, xml_config="config_2"):
+def test_pid_response_step_input(duration_seconds=5.0, target_length=0.9, xml_config="config_2"):
     """
     Test PID response to a step input for all actuators.
     
@@ -85,15 +85,36 @@ def test_pid_response_step_input(duration_seconds=5.0, target_length=0.7, xml_co
         
         # Store control signals after PID update
         for i in range(sim.n_actuators):
-            control_signals[step, i] = sim.curr_ctrl[i] if hasattr(sim, 'curr_ctrl') else 0.0
+            # Prefer direct PID output if available
+            if hasattr(sim, 'pid_controllers') and hasattr(sim.pid_controllers[i], 'output'):
+                control_signals[step, i] = sim.pid_controllers[i].output  # Accurate PID output
+                # print("PID storage option 1")
+            elif hasattr(sim, 'curr_ctrl'):
+                control_signals[step, i] = sim.curr_ctrl[i]  # Fallback: current control signal
+                # print("PID storage option 2")
+            else:
+                control_signals[step, i] = 0.0  # Default if not available
+                # print("PID storage option 3")
+            
+            # Add debugging prints here
+            if step % 25 == 0:  # Print every 25 steps to avoid spam
+                # print(f"Step {step}, Actuator {i+1}:")
+                # print(f"  Current length: {current_length:.6f}")
+                # print(f"  Target length: {target_length:.6f}")
+                # print(f"  Error: {target_length - current_length:.6f}")
+                # print(f"  Control signal: {control_signals[step, i]:.6f}")
+                # Assuming PID components are available
+                if hasattr(sim, 'pid_components'):
+                    proportional, integral, derivative = sim.pid_components[i]
+                    # print(f"  PID components - P: {proportional:.6f}, I: {integral:.6f}, D: {derivative:.6f}")
         
         # Progress indicator
         if step % (num_steps // 10) == 0:
             progress = (step / num_steps) * 100
-            print(f"Progress: {progress:.1f}%")
+            # print(f"Progress: {progress:.1f}%")
     
     simulation_time = time.time() - start_time
-    print(f"Simulation completed in {simulation_time:.2f} seconds")
+    # print(f"Simulation completed in {simulation_time:.2f} seconds")
     
     return time_array, cable_lengths, target_lengths, control_signals, xml_timestep, initial_lengths
 
@@ -186,7 +207,7 @@ def test_multiple_step_inputs():
     fig, axes = plt.subplots(len(target_values), 1, figsize=(12, 4*len(target_values)))
     
     for idx, target in enumerate(target_values):
-        print(f"\n--- Testing target length: {target} ---")
+        # print(f"\n--- Testing target length: {target} ---")
         
         time_array, cable_lengths, target_lengths, control_signals, xml_timestep, initial_lengths = \
             test_pid_response_step_input(duration_seconds=duration, target_length=target)
@@ -238,11 +259,11 @@ def main():
         print("-" * 40)
         
         time_array, cable_lengths, target_lengths, control_signals, xml_timestep, initial_lengths = \
-            test_pid_response_step_input(duration_seconds=5.0, target_length=0.7)
+            test_pid_response_step_input(duration_seconds=5.0, target_length=0.9)
         
         # Create and show plot
         fig1 = plot_pid_response(time_array, cable_lengths, target_lengths, control_signals, 
-                                xml_timestep, initial_lengths, 0.7)
+                                xml_timestep, initial_lengths, 0.9)
         
         # Save the plot
         fig1.savefig('pid_response_step_input.png', dpi=300, bbox_inches='tight')

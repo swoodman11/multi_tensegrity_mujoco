@@ -1,7 +1,7 @@
 <mujoco model="TT (v1.31)">
   <compiler angle="radian"/>
 
-  <option timestep="0.04" cone="elliptic">
+  <option timestep="0.5" cone="elliptic">
     <flag frictionloss="disable"/>
   </option>
 
@@ -304,22 +304,22 @@
     </spatial>
 
 <!--    Used to quickly find potential attachment points-->
-   <!-- <spatial name="connect0" stiffness="100000" springlength="0.3"> -->
-     <!-- <site site="t2_s0"/> -->
-     <!-- <site site="t1_s2"/> -->
-   <!-- </spatial> -->
-   <!-- <spatial name="connect1" stiffness="100000" springlength="0.3"> -->
-     <!-- <site site="t2_s1"/> -->
-     <!-- <site site="t1_s1"/> -->
-   <!-- </spatial> -->
-   <!-- <spatial name="connect2" stiffness="100000" springlength="0.3"> -->
-     <!-- <site site="t2_s3"/> -->
-     <!-- <site site="t1_s5"/> -->
-   <!-- </spatial> -->
-   <!-- <spatial name="connect3" stiffness="100000" springlength="0.3"> -->
-     <!-- <site site="t2_s4"/> -->
-     <!-- <site site="t1_s4"/> -->
-    <!-- </spatial> -->
+   <!-- <spatial name="connect0" stiffness="100000" springlength="0.3">
+     <site site="t2_s0"/>
+     <site site="t1_s2"/>
+   </spatial>
+   <spatial name="connect1" stiffness="100000" springlength="0.3">
+     <site site="t2_s1"/>
+     <site site="t1_s1"/>
+   </spatial>
+   <spatial name="connect2" stiffness="100000" springlength="0.3">
+     <site site="t2_s3"/>
+     <site site="t1_s5"/>
+   </spatial>
+   <spatial name="connect3" stiffness="100000" springlength="0.3">
+     <site site="t2_s4"/>
+     <site site="t1_s4"/>
+    </spatial> -->
   </tendon>
 
   <equality>

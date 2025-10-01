@@ -33,22 +33,58 @@ def run_roll_sequence():
     """
     # Define the rolling sequence
     # Testing one cable at a time - expanded for dual tensegrity (12 actuators)
-    roll_sequence = np.array([
-        [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],  # All extended (baseline)
-        [1.0, 0.2, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],  # First tensegrity, cable 2
-        [1.0, 1.0, 0.2, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],  # First tensegrity, cable 3
-        [1.0, 1.0, 1.0, 0.2, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],  # First tensegrity, cable 4
-        [1.0, 1.0, 1.0, 1.0, 0.2, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],  # First tensegrity, cable 5
-        [1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],  # First tensegrity, cable 6
-        [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 1.0, 1.0, 1.0, 1.0, 1.0],  # Second tensegrity, cable 1
-        [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 1.0, 1.0, 1.0, 1.0],  # Second tensegrity, cable 2
-        [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 1.0, 1.0, 1.0],  # Second tensegrity, cable 3
-        [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 1.0, 1.0],  # Second tensegrity, cable 4
-        [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 1.0],  # Second tensegrity, cable 5
-        [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2],   # Second tensegrity, cable 6
-        [0.2, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]  # First tensegrity, cable 1
+    # roll_sequence = np.array([
+    #     [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],  # All extended (baseline)
+    #     [1.0, 0.2, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],  # First tensegrity, cable 2
+    #     [1.0, 1.0, 0.2, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],  # First tensegrity, cable 3
+    #     [1.0, 1.0, 1.0, 0.2, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],  # First tensegrity, cable 4
+    #     [1.0, 1.0, 1.0, 1.0, 0.2, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],  # First tensegrity, cable 5
+    #     [1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],  # First tensegrity, cable 6
+    #     [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 1.0, 1.0, 1.0, 1.0, 1.0],  # Second tensegrity, cable 1
+    #     [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 1.0, 1.0, 1.0, 1.0],  # Second tensegrity, cable 2
+    #     [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 1.0, 1.0, 1.0],  # Second tensegrity, cable 3
+    #     [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 1.0, 1.0],  # Second tensegrity, cable 4
+    #     [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 1.0],  # Second tensegrity, cable 5
+    #     [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2],   # Second tensegrity, cable 6
+    #     [0.2, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]  # First tensegrity, cable 1
+    # ])
+
+    # Quasi-static rolling gait - expanded for dual tensegrity (12 actuators)
+    # Two options:
+    # 1. Mirror pattern (same movement for both tensegrities)
+    # NOTE: This pattern is from a single 3-bar gait. It is duplicated for two robots, but doesn't work effectively.
+    # roll_sequence = np.array([
+    #     [1.0, 1.0, 0.1, 1.0, 1.0, 0.1,   1.0, 1.0, 0.1, 1.0, 1.0, 0.1],  # Step 1 - both tensegrities move identically
+    #     [0.0, 1.0, 1.0, 0.0, 0.8, 0.1,   0.0, 1.0, 1.0, 0.0, 0.8, 0.1],  # Step 2
+    #     [1.0, 0.1, 1.0, 1.0, 0.1, 1.0,   1.0, 0.1, 1.0, 1.0, 0.1, 1.0],  # Step 3
+    #     [1.0, 1.0, 0.0, 0.8, 0.1, 0.0,   1.0, 1.0, 0.0, 0.8, 0.1, 0.0],  # Step 4
+    #     [0.1, 1.0, 1.0, 0.1, 1.0, 1.0,   0.1, 1.0, 1.0, 0.1, 1.0, 1.0],  # Step 5
+    #     [1.0, 0.0, 1.0, 0.1, 0.0, 0.8,   1.0, 0.0, 1.0, 0.1, 0.0, 0.8]   # Step 6
+    # ])
+
+    # # 2. Mirror and flipped pattern (same movement for both tensegrities but flipped for second tensegrity)
+    # roll_sequence = np.array([
+    #     [1.0, 1.0, 0.1, 1.0, 1.0, 0.1,   0.1, 1.0, 1.0, 0.1, 1.0, 1.0], # NOTE: the second set of 6 actuators is flipped
+    #     [0.0, 1.0, 1.0, 0.0, 0.8, 0.1,   0.1, 0.8, 0.0, 1.0, 1.0, 0.0],
+    #     [1.0, 0.1, 1.0, 1.0, 0.1, 1.0,   1.0, 0.1, 1.0, 1.0, 0.1, 1.0],
+    #     [1.0, 1.0, 0.0, 0.8, 0.1, 0.0,   0.0, 0.1, 0.8, 0.0, 1.0, 1.0],
+    #     [0.1, 1.0, 1.0, 0.1, 1.0, 1.0,   1.0, 1.0, 0.1, 1.0, 1.0, 0.1],
+    #     [1.0, 0.0, 1.0, 0.1, 0.0, 0.8,   0.8, 0.0, 0.1, 1.0, 0.0, 1.0]
+    # ])
+
+    # 3. Offset and flipped pattern repeated n times
+    base_sequence = np.array([
+        [1.0, 1.0, 0.1, 1.0, 1.0, 0.1,   0.1, 0.8, 0.0, 1.0, 1.0, 0.0],
+        [0.0, 1.0, 1.0, 0.0, 0.8, 0.1,   1.0, 0.1, 1.0, 1.0, 0.1, 1.0],
+        [1.0, 0.1, 1.0, 1.0, 0.1, 1.0,   0.0, 0.1, 0.8, 0.0, 1.0, 1.0],
+        [1.0, 1.0, 0.0, 0.8, 0.1, 0.0,   1.0, 1.0, 0.1, 1.0, 1.0, 0.1],
+        [0.1, 1.0, 1.0, 0.1, 1.0, 1.0,   0.8, 0.0, 0.1, 1.0, 0.0, 1.0],
+        [1.0, 0.0, 1.0, 0.1, 0.0, 0.8,   0.1, 1.0, 1.0, 0.1, 1.0, 1.0]
     ])
     
+    n = 30  # Number of times to repeat the sequence
+    roll_sequence = np.tile(base_sequence, (n, 1))
+         
     # Create output directory
     output_dir = Path('sim_output')
     output_dir.mkdir(exist_ok=True)
@@ -94,6 +130,9 @@ def run_roll_sequence():
             # Record time
             current_time = step_counter * sim.dt
             time_data.append(current_time)
+
+            # Provide the target lengths as action input
+            obs, reward, done, info = sim.sim_step(target_lengths)
             
             # Record target lengths
             target_lengths_data.append(target_lengths.copy())
@@ -122,8 +161,7 @@ def run_roll_sequence():
                 pid_responses.append(pid_output)
             pid_responses_data.append(pid_responses.copy())
             
-            # Provide the target lengths as action input
-            obs, reward, done, info = sim.sim_step(target_lengths)
+            
             
             # Capture frame if visualization is enabled
             if sim.visualize:

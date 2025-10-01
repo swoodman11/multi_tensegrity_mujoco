@@ -47,16 +47,17 @@ class PID:
         
         return self.u
         
-    def update_control_by_target_norm_length(self, curr_length, target_norm_length, rest_length):
+    def update_control_by_target_norm_length(self, curr_length, target_norm_length, rest_length, min_length, max_length):
         """
         Update PID controller based on current and target lengths.
         Modified to support bidirectional control (-1.0 to 1.0)
         """
         # Map target_norm_length (0.0-1.0) to desired cable length
         # 0.0 = fully contracted, 1.0 = fully extended
-        min_length = 0.1  # Same as your min_length clip value
-        max_length = 1.0  # Same as your max_length clip value
+        # min_length = 0.1  # Same as your min_length clip value
+        # max_length = 1.0  # Same as your max_length clip value
         target_length = min_length + (max_length - min_length) * target_norm_length
+        # print(f"DEBUG target_length: {target_length}, curr_length: {curr_length}")
         
         # Calculate error (positive error = need to extend, negative error = need to contract)
         error = target_length - curr_length
