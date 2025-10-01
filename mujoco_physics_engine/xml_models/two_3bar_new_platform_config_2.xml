@@ -12,7 +12,7 @@
   </visual>
 
   <default>
-    <geom size="0.014 0 0" condim="6" friction="1.2 0 0" solref="-5000 -50" rgba="0.75 0.75 0.75 1"/>
+    <geom size="0.014 0 0" condim="6" friction="1.2 1.2 1.2" solref="-5000 -50" rgba="0.75 0.75 0.75 1"/>
     <site size="0.02 0.005 0.005"/>
 
     <tendon stiffness="100000" damping="1000" springlength="1.5" width="0.005" rgba="1 1 1 0.5"/>

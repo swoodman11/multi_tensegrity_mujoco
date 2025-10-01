@@ -124,7 +124,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         self.prev_pos = None
         self.step_count = 0
 
-        self.apply_random_perturbation() #can comment
+        
 
         for motor in self.cable_motors:
             motor.reset_omega_t()
@@ -156,6 +156,8 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
 
         # Adding some debugging here (Setph)
 
+        # self.apply_random_perturbation() #can comment
+
         # Convert target_lengths to controls in [-1, 1]
         if target_lengths is not None:
             controls = np.zeros(self.n_actuators)  # NumPy array
@@ -175,10 +177,13 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
                 debug_print(f"cable_sites[{self.actuated_ids[i]}][0]: {self.cable_sites[self.actuated_ids[i]][0]}", "tensegrity_mjc_simulation.py", self.debug_enabled)
                 curr_length = np.linalg.norm(s1 - s0)
                 
-
                 ctrl, _ = self.pids[i].update_control_by_target_norm_length(curr_length, lengths, rest_length,self.min_cable_length, self.max_cable_length)
                 controls[i] = -1.0*ctrl
                 # print(f"PID Control for cable {i} (actuated_id {self.actuated_ids[i]}): {ctrl}, Target norm length: {lengths}, Current length: {curr_length}, Rest length: {rest_length}")
+
+            for i in range(3):
+                controls[i+6] = controls[i+3]
+                # print(f"Control for cable {i+6} (actuated_id {self.actuated_ids[i+6]}): {controls[i+6]} (mirrored from cable {i+3})")
 
         # self.forward()
         # for i in range(len(self.cable_sites)):
@@ -193,7 +198,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         #         rest_length = rest_length - dl
         #         self.mjc_model.tendon_lengthspring[i] = rest_length
 
-        self.forward()
+        # self.forward()
         for i in range(len(self.cable_sites)):
             if controls is not None and i in self.actuated_ids:
                 # Find the position in the action vector
@@ -262,7 +267,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         # Weighting individual reward components
         velocity_reward *= 4.0
         distance_reward *= 15.0 
-        penalties *= 0.5  #Making this 1 did eliminate the oscillations, which is good
+        penalties *= 0.0  #Making this 1 did eliminate the oscillations, which is good
 
         reward = velocity_reward + distance_reward + penalties
         

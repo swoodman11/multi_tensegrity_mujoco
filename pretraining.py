@@ -71,14 +71,43 @@ os.environ["CUDA_VISIBLE_DEVICES"] = ""
 #     [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
 # ])
 
+# roll_sequence = np.array([
+#         [1.0, 1.0, 0.1, 1.0, 1.0, 0.1,   0.1, 0.8, 0.0, 1.0, 1.0, 0.0],
+#         [0.0, 1.0, 1.0, 0.0, 0.8, 0.1,   1.0, 0.1, 1.0, 1.0, 0.1, 1.0],
+#         [1.0, 0.1, 1.0, 1.0, 0.1, 1.0,   0.0, 0.1, 0.8, 0.0, 1.0, 1.0],
+#         [1.0, 1.0, 0.0, 0.8, 0.1, 0.0,   1.0, 1.0, 0.1, 1.0, 1.0, 0.1],
+#         [0.1, 1.0, 1.0, 0.1, 1.0, 1.0,   0.8, 0.0, 0.1, 1.0, 0.0, 1.0],
+#         [1.0, 0.0, 1.0, 0.1, 0.0, 0.8,   0.1, 1.0, 1.0, 0.1, 1.0, 1.0]
+#     ])
+
+# Shuffling gait for dual tensegrity robot
+# Strategy: Alternate contraction patterns between tensegrities to create shuffling motion
+# First 6 actuators control first tensegrity, last 6 control second tensegrity
 roll_sequence = np.array([
-        [1.0, 1.0, 0.1, 1.0, 1.0, 0.1,   0.1, 0.8, 0.0, 1.0, 1.0, 0.0],
-        [0.0, 1.0, 1.0, 0.0, 0.8, 0.1,   1.0, 0.1, 1.0, 1.0, 0.1, 1.0],
-        [1.0, 0.1, 1.0, 1.0, 0.1, 1.0,   0.0, 0.1, 0.8, 0.0, 1.0, 1.0],
-        [1.0, 1.0, 0.0, 0.8, 0.1, 0.0,   1.0, 1.0, 0.1, 1.0, 1.0, 0.1],
-        [0.1, 1.0, 1.0, 0.1, 1.0, 1.0,   0.8, 0.0, 0.1, 1.0, 0.0, 1.0],
-        [1.0, 0.0, 1.0, 0.1, 0.0, 0.8,   0.1, 1.0, 1.0, 0.1, 1.0, 1.0]
-    ])
+    # Step 1: Both tensegrities at rest position
+    [1.0, 1.0, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+    
+    # Step 2: First tensegrity contracts front cables, second stays extended
+    [0.3, 0.3, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+    
+    # Step 3: First tensegrity contracts more, second starts to contract rear
+    [0.2, 0.2, 0.8, 0.8, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 0.3, 0.3],
+    
+    # Step 4: Transition - first extends rear, second contracts front
+    [0.2, 0.2, 1.0, 1.0, 0.3, 0.3,   0.3, 0.3, 1.0, 1.0, 0.2, 0.2],
+    
+    # Step 5: First extends, second fully contracts front
+    [0.8, 0.8, 1.0, 1.0, 0.8, 0.8,   0.2, 0.2, 0.8, 0.8, 0.2, 0.2],
+    
+    # Step 6: Both extend to transition state
+    [1.0, 1.0, 1.0, 1.0, 1.0, 1.0,   0.8, 0.8, 1.0, 1.0, 0.8, 0.8],
+    
+    # Step 7: Second tensegrity extends fully, first starts new cycle
+    [0.3, 0.3, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+    
+    # Step 8: Return to rest for cycle completion
+    [1.0, 1.0, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+])
 
 # Create environment
 env = TensegrityEnv(obs_mode="tier2", visualize=False)
@@ -88,7 +117,7 @@ obs_dataset = []
 action_dataset = []
 
 obs, _ = env.reset()
-for _step in range(5):  # Run for enough steps to cover the gait sequence multiple times
+for _step in range(50000):  # Run for enough steps to cover the gait sequence multiple times
     for action in roll_sequence:
         # Store the current observation and the expert action
         obs_dataset.append(obs)
@@ -160,9 +189,12 @@ for epoch in range(num_epochs):
     if epoch % 10 == 0:
         print(f"Epoch {epoch}, Loss: {avg_epoch_loss:.6f}")
 
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+model.save(f"tensegrity_gait_seeded_before_RL_{timestamp}")
+
 # Now continue with regular RL training
 print("Starting RL training...")
-model.learn(total_timesteps=100_000)
+model.learn(total_timesteps=3_000_000)
 
 # Save the model with a timestamp to prevent overwriting files
 
