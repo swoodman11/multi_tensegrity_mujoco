@@ -38,17 +38,42 @@ import time
 import os
 import glob
 import argparse
+import re
 from datetime import datetime
 import numpy as np
 import matplotlib.pyplot as plt
 
-def find_most_recent_model(models_dir="trained_models", pattern="ppo_tensegrity_gait_*.zip"):
-    """Find the most recent trained model based on timestamp in filename"""
+def find_most_recent_model(models_dir="trained_models", pattern="*_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9][0-9][0-9][0-9][0-9][0-9].zip"):
+    """Find the most recent trained model based on timestamp in filename.
+    
+    Default pattern matches any file ending with timestamp format: YYYYMMDD_HHMMSS.zip
+    This covers models from train.py, pretraining.py, train_parallel.py, etc.
+    """
+    # First try the timestamp pattern
     pattern_path = os.path.join(models_dir, pattern)
     model_files = glob.glob(pattern_path)
     
+    # Alternative: use regex to find any .zip file with a timestamp pattern
     if not model_files:
-        raise FileNotFoundError(f"No models found matching pattern: {pattern_path}")
+        print("Timestamp pattern not found, searching for any files with timestamp format...")
+        all_zip_files = glob.glob(os.path.join(models_dir, "*.zip"))
+        timestamp_pattern = re.compile(r'.*_(\d{8}_\d{6})\.zip$')
+        
+        model_files = []
+        for file in all_zip_files:
+            if timestamp_pattern.match(file):
+                model_files.append(file)
+    
+    if not model_files:
+        # Fallback to old pattern for backwards compatibility
+        old_pattern = "ppo_tensegrity_gait_*.zip"
+        old_pattern_path = os.path.join(models_dir, old_pattern)
+        model_files = glob.glob(old_pattern_path)
+        
+        if not model_files:
+            raise FileNotFoundError(f"No models found matching timestamp pattern: {pattern_path} or fallback pattern: {old_pattern_path}")
+        else:
+            print(f"Using fallback pattern: {old_pattern}")
     
     # Sort by modification time (most recent first)
     model_files.sort(key=os.path.getmtime, reverse=True)
@@ -61,7 +86,7 @@ def find_most_recent_model(models_dir="trained_models", pattern="ppo_tensegrity_
     return model_path
 
 
-def create_observation_plots(obs_np, obs_mode, timestamp):
+def create_observation_plots(obs_np, obs_mode, timestamp, save_plots=False):
     """
     Create comprehensive observation plots based on observation mode.
     
@@ -69,17 +94,18 @@ def create_observation_plots(obs_np, obs_mode, timestamp):
         obs_np: numpy array of shape (timesteps, obs_dim)
         obs_mode: "tier2" or "legacy104"
         timestamp: string timestamp for filenames
+        save_plots: whether to save plots as PNG files
     """
     print(f"Creating observation plots for {obs_mode} mode...")
     print(f"Observation shape: {obs_np.shape}")
     
     if obs_mode == "tier2":
-        create_tier2_observation_plots(obs_np, timestamp)
+        create_tier2_observation_plots(obs_np, timestamp, save_plots)
     else:  # legacy104 or other
-        create_legacy_observation_plots(obs_np, timestamp)
+        create_legacy_observation_plots(obs_np, timestamp, save_plots)
 
 
-def create_tier2_observation_plots(obs_np, timestamp):
+def create_tier2_observation_plots(obs_np, timestamp, save_plots=False):
     """
     Create plots for Tier2 96D observation mode.
     
@@ -180,18 +206,19 @@ def create_tier2_observation_plots(obs_np, timestamp):
     plt.suptitle('Tier2 Observation Analysis (96D)', fontsize=16, fontweight='bold')
     plt.tight_layout(rect=[0, 0.03, 1, 0.97])
     
-    # Save plot
-    filename = f"tier2_observations_{timestamp}.png"
-    plt.savefig(filename, dpi=300, bbox_inches='tight')
-    print(f"Saved Tier2 observation plot: {filename}")
+    # Save plot only if requested
+    if save_plots:
+        filename = f"tier2_observations_{timestamp}.png"
+        plt.savefig(filename, dpi=300, bbox_inches='tight')
+        print(f"Saved Tier2 observation plot: {filename}")
     plt.show()
     plt.close()
     
     # Create detailed cable analysis
-    create_detailed_cable_plots(obs_np, timestamp, obs_mode="tier2")
+    create_detailed_cable_plots(obs_np, timestamp, save_plots, obs_mode="tier2")
 
 
-def create_legacy_observation_plots(obs_np, timestamp):
+def create_legacy_observation_plots(obs_np, timestamp, save_plots=False):
     """
     Create plots for Legacy 104D observation mode.
     
@@ -250,18 +277,19 @@ def create_legacy_observation_plots(obs_np, timestamp):
     plt.suptitle('Legacy Observation Analysis (104D)', fontsize=16, fontweight='bold')
     plt.tight_layout(rect=[0, 0.03, 1, 0.97])
     
-    # Save plot
-    filename = f"legacy_observations_{timestamp}.png"
-    plt.savefig(filename, dpi=300, bbox_inches='tight')
-    print(f"Saved Legacy observation plot: {filename}")
+    # Save plot only if requested
+    if save_plots:
+        filename = f"legacy_observations_{timestamp}.png"
+        plt.savefig(filename, dpi=300, bbox_inches='tight')
+        print(f"Saved Legacy observation plot: {filename}")
     plt.show()
     plt.close()
     
     # Create detailed cable analysis for legacy mode
-    create_detailed_cable_plots(obs_np, timestamp, obs_mode="legacy")
+    create_detailed_cable_plots(obs_np, timestamp, save_plots, obs_mode="legacy")
 
 
-def create_detailed_cable_plots(obs_np, timestamp, obs_mode):
+def create_detailed_cable_plots(obs_np, timestamp, save_plots=False, obs_mode="tier2"):
     """Create detailed analysis of cable-related observations."""
     
     if obs_mode == "tier2":
@@ -332,10 +360,11 @@ def create_detailed_cable_plots(obs_np, timestamp, obs_mode):
     plt.suptitle(f'Detailed Cable Analysis ({obs_mode.upper()} mode)', fontsize=16, fontweight='bold')
     plt.tight_layout(rect=[0, 0.03, 1, 0.97])
     
-    # Save plot
-    filename = f"cable_details_{obs_mode}_{timestamp}.png"
-    plt.savefig(filename, dpi=300, bbox_inches='tight')
-    print(f"Saved detailed cable plot: {filename}")
+    # Save plot only if requested
+    if save_plots:
+        filename = f"cable_details_{obs_mode}_{timestamp}.png"
+        plt.savefig(filename, dpi=300, bbox_inches='tight')
+        print(f"Saved detailed cable plot: {filename}")
     plt.show()
     plt.close()
 
@@ -345,6 +374,8 @@ parser.add_argument("--model", type=str, default=None,
                    help="Specific model path to load (without .zip extension). If not provided, uses most recent model.")
 parser.add_argument("--no-vis", action="store_true", 
                    help="Disable visualization")
+parser.add_argument("--save-plots", action="store_true", 
+                   help="Save observation and analysis plots as PNG files (disabled by default)")
 args = parser.parse_args()
 
 # Determine which model to load
@@ -460,7 +491,7 @@ if actions_np.shape[0] > 0:
 
 if obs_np.shape[0] > 0 and obs_np.shape[1] > 0:
     # Create comprehensive observation plots based on observation mode
-    create_observation_plots(obs_np, env.sim.obs_mode, timestamp)
+    create_observation_plots(obs_np, env.sim.obs_mode, timestamp, args.save_plots)
 
 if rewards_np.shape[0] > 0:
     # Reward plots: instantaneous and cumulative

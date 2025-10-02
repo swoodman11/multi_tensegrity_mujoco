@@ -13,6 +13,7 @@ class PID:
         self.Kd = Kd
         self.dt = dt
         self.RANGE = RANGE
+        # self.integral_limit = integral_limit
         self.debug_enabled = debug_enabled
         self.last_error = None
         self.cum_error = None
@@ -31,16 +32,29 @@ class PID:
         # Calculate PID terms
         p_term = self.Kp * error
         
-        # Update and apply integral term
+        # Update and apply integral term with windup protection
         self.cum_error += error * self.dt
+        
+        # # Apply integral windup protection
+        # if self.integral_limit is not None:
+        #     self.cum_error = np.clip(self.cum_error, -self.integral_limit, self.integral_limit)
+        
         i_term = self.Ki * self.cum_error
         
-        # Calculate derivative term
-        d_term = self.Kd * (error - self.last_error) / self.dt
+        # Calculate derivative term with safety check
+        if self.dt > 0:
+            d_term = self.Kd * (error - self.last_error) / self.dt
+        else:
+            d_term = 0.0
         self.last_error = error
         
         # Combine terms
         self.u = p_term + i_term + d_term
+        
+        # Safety check for NaN/Inf values
+        if not np.isfinite(self.u).all():
+            print(f"WARNING: Non-finite PID output detected: {self.u}")
+            # self.u = np.zeros_like(self.u)
         
         # Clip control output to range
         self.u = np.clip(self.u, self.RANGE[0], self.RANGE[1])
@@ -52,15 +66,21 @@ class PID:
         Update PID controller based on current and target lengths.
         Modified to support bidirectional control (-1.0 to 1.0)
         """
+        # Input validation
+        if not np.isfinite([curr_length, target_norm_length, rest_length, min_length, max_length]).all():
+            print(f"WARNING: Non-finite input to PID controller")
+            return np.array([0.0]), None
+            
         # Map target_norm_length (0.0-1.0) to desired cable length
         # 0.0 = fully contracted, 1.0 = fully extended
-        # min_length = 0.1  # Same as your min_length clip value
-        # max_length = 1.0  # Same as your max_length clip value
         target_length = min_length + (max_length - min_length) * target_norm_length
-        # print(f"DEBUG target_length: {target_length}, curr_length: {curr_length}")
         
         # Calculate error (positive error = need to extend, negative error = need to contract)
         error = target_length - curr_length
+        
+        # # Additional safety check for error magnitude
+        # if abs(error) > 2.0:  # Limit maximum error to prevent extreme responses
+        #     error = np.sign(error) * 2.0
         
         # Update PID controller
         self.update(error)

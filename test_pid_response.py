@@ -25,18 +25,20 @@ def test_pid_response_step_input(duration_seconds=5.0, target_length=0.9, xml_co
     # Setup simulator
     if xml_config == "config_1":
         xml_path = Path('mujoco_physics_engine/xml_models/two_3bar_new_platform_config_1.xml')
-        xml_timestep = 0.02  # Based on typical config_1 timestep
     else:
         xml_path = Path('mujoco_physics_engine/xml_models/two_3bar_new_platform_config_2.xml')
-        xml_timestep = 0.04  # From the XML file
-    
-    print(f"Testing PID response with {xml_config}")
-    print(f"XML timestep: {xml_timestep} seconds")
-    print(f"Target length: {target_length} (normalized)")
-    print(f"Duration: {duration_seconds} seconds")
     
     # Initialize simulator without visualization for faster testing
     sim = TensegrityMuJoCoSimulator(xml_path, visualize=False, debug_enabled=False)
+    
+    # Get actual timestep from simulator
+    actual_timestep = sim.dt
+    xml_timestep = actual_timestep  # Use actual timestep
+    
+    print(f"Testing PID response with {xml_config}")
+    print(f"Actual simulation timestep: {actual_timestep} seconds")
+    print(f"Target length: {target_length} (normalized)")
+    print(f"Duration: {duration_seconds} seconds")
     
     # Bring robot to ground level and initialize
     sim.bring_to_grnd()
@@ -44,17 +46,53 @@ def test_pid_response_step_input(duration_seconds=5.0, target_length=0.9, xml_co
     
     # Get initial cable lengths
     initial_lengths = []
+    initial_lengths_raw = []
+    print("\nDebugging cable length calculation:")
     for i in range(sim.n_actuators):
         cable_idx = sim.actuated_ids[i]
         s0 = sim.mjc_data.sensor(f"pos_{sim.cable_sites[cable_idx][0]}").data
         s1 = sim.mjc_data.sensor(f"pos_{sim.cable_sites[cable_idx][1]}").data
-        initial_length = np.linalg.norm(s1 - s0)
-        initial_lengths.append(initial_length)
+        raw_length = np.linalg.norm(s1 - s0)
+        
+        # Normalize the same way as in get_observation_tier2()
+        denom = max(sim.max_cable_length - sim.min_cable_length, 1e-6)
+        normalized_length = np.clip((raw_length - sim.min_cable_length) / denom, 0.0, 1.0)
+        
+        initial_lengths.append(normalized_length)
+        initial_lengths_raw.append(raw_length)
+        
+        # Debug first few cables
+        if i < 3:
+            print(f"Cable {i} (actuated_id {cable_idx}):")
+            print(f"  Site 0 ({sim.cable_sites[cable_idx][0]}): {s0}")
+            print(f"  Site 1 ({sim.cable_sites[cable_idx][1]}): {s1}")
+            print(f"  Raw distance: {raw_length:.6f}m")
+            print(f"  Normalized: {normalized_length:.6f}")
     
-    print(f"Initial cable lengths: {[f'{l:.3f}' for l in initial_lengths]}")
+    print(f"\nInitial cable lengths (raw): {[f'{l:.3f}' for l in initial_lengths_raw]}")
+    print(f"Initial cable lengths (normalized): {[f'{l:.3f}' for l in initial_lengths]}")
+    print(f"Min/Max cable length bounds: {sim.min_cable_length:.3f} to {sim.max_cable_length:.3f}")
     
-    # Data storage
-    num_steps = int(duration_seconds / sim.dt)
+    # Compare with the simulator's method
+    sim_cable_lengths = sim._get_actuated_cable_lengths()
+    print(f"Simulator method lengths (raw): {[f'{l:.3f}' for l in sim_cable_lengths]}")
+    
+    # Check if there's a scaling issue
+    if len(initial_lengths_raw) > 0 and len(sim_cable_lengths) > 0:
+        ratio = initial_lengths_raw[0] / sim_cable_lengths[0] if sim_cable_lengths[0] != 0 else 1.0
+        print(f"Ratio between methods: {ratio:.6f}")
+        
+        # Check for obvious unit scaling
+        if abs(ratio - 10.0) < 0.1:
+            print("WARNING: Detected 10x scaling difference - possible units issue!")
+        elif abs(ratio - 0.1) < 0.01:
+            print("WARNING: Detected 0.1x scaling difference - possible units issue!")
+    
+    # Data storage - ensure minimum number of steps for meaningful simulation
+    num_steps = max(50, int(duration_seconds / sim.dt))  # At least 50 steps
+    actual_duration = num_steps * sim.dt
+    print(f"Calculated steps: {num_steps} (actual duration: {actual_duration:.3f}s)")
+    
     time_array = np.zeros(num_steps)
     cable_lengths = np.zeros((num_steps, sim.n_actuators))
     target_lengths = np.zeros((num_steps, sim.n_actuators))
@@ -71,30 +109,42 @@ def test_pid_response_step_input(duration_seconds=5.0, target_length=0.9, xml_co
         # Time tracking
         time_array[step] = step * sim.dt
         
-        # Store current cable lengths before step
+        # Store current cable lengths before step (using normalized values like the RL system)
         for i in range(sim.n_actuators):
+            # Use the same calculation as the RL system
             cable_idx = sim.actuated_ids[i]
             s0 = sim.mjc_data.sensor(f"pos_{sim.cable_sites[cable_idx][0]}").data
             s1 = sim.mjc_data.sensor(f"pos_{sim.cable_sites[cable_idx][1]}").data
-            current_length = np.linalg.norm(s1 - s0)
-            cable_lengths[step, i] = current_length
+            raw_length = np.linalg.norm(s1 - s0)
+            
+            # Normalize the same way as in get_observation_tier2()
+            denom = max(sim.max_cable_length - sim.min_cable_length, 1e-6)
+            normalized_length = np.clip((raw_length - sim.min_cable_length) / denom, 0.0, 1.0)
+            
+            cable_lengths[step, i] = normalized_length  # Store normalized length
             target_lengths[step, i] = target_length
-        
+            
+            # Debug extreme values - check both raw and normalized
+            if step == 0:
+                if i < 3:  # Only debug first few cables to avoid spam
+                    print(f"Cable {i}: Raw={raw_length:.3f}m, Normalized={normalized_length:.3f}")
+                if raw_length > 100:  # Flag suspiciously large raw values
+                    print(f"WARNING: Large raw cable length detected for cable {i}: {raw_length:.3f}")
+                    print(f"  Site positions: s0={s0}, s1={s1}")
+                
         # Take simulation step with target lengths
         sim.sim_step(target_step)
         
         # Store control signals after PID update
         for i in range(sim.n_actuators):
-            # Prefer direct PID output if available
-            if hasattr(sim, 'pid_controllers') and hasattr(sim.pid_controllers[i], 'output'):
-                control_signals[step, i] = sim.pid_controllers[i].output  # Accurate PID output
-                # print("PID storage option 1")
-            elif hasattr(sim, 'curr_ctrl'):
-                control_signals[step, i] = sim.curr_ctrl[i]  # Fallback: current control signal
-                # print("PID storage option 2")
+            # Access PID controller output from sim.pids
+            if hasattr(sim, 'pids') and i < len(sim.pids):
+                control_signals[step, i] = sim.pids[i].u[0]  # Get PID output
+            # elif hasattr(sim, 'curr_ctrl') and i < len(sim.curr_ctrl):
+            #     control_signals[step, i] = sim.curr_ctrl[i]  # Fallback: current control signal
             else:
-                control_signals[step, i] = 0.0  # Default if not available
-                # print("PID storage option 3")
+                print(f"WARNING: PID controller output not available for actuator {i}")
+                # control_signals[step, i] = 0.0  # Default if not available
             
             # Add debugging prints here
             if step % 25 == 0:  # Print every 25 steps to avoid spam
@@ -109,7 +159,7 @@ def test_pid_response_step_input(duration_seconds=5.0, target_length=0.9, xml_co
                     # print(f"  PID components - P: {proportional:.6f}, I: {integral:.6f}, D: {derivative:.6f}")
         
         # Progress indicator
-        if step % (num_steps // 10) == 0:
+        if num_steps > 10 and step % (num_steps // 10) == 0:
             progress = (step / num_steps) * 100
             # print(f"Progress: {progress:.1f}%")
     
@@ -141,8 +191,8 @@ def plot_pid_response(time_array, cable_lengths, target_lengths, control_signals
         ax1.axhline(y=target_lengths[0, i], color=colors[i], linestyle='--', alpha=0.6, linewidth=1)
     
     ax1.set_xlabel('Time (seconds)')
-    ax1.set_ylabel('Cable Length (m)')
-    ax1.set_title('Cable Length Response')
+    ax1.set_ylabel('Cable Length (Normalized 0-1)')
+    ax1.set_title('Cable Length Response (Normalized)')
     ax1.grid(True, alpha=0.3)
     ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
     
@@ -172,20 +222,17 @@ def plot_pid_response(time_array, cable_lengths, target_lengths, control_signals
     for t_line in timestep_lines[1:]:
         ax2.axvline(x=t_line, color='red', linestyle=':', alpha=0.4, linewidth=0.8)
     
-    # Plot 3: Error vs Time (Target - Actual)
+    # Plot 3: Error vs Time (Target - Actual) - now both are normalized
     ax3 = axes[2]
     for i in range(n_actuators):
-        # Convert target normalized length to actual target length for comparison
-        min_length = 0.1  # From PID implementation
-        max_length = 1.0
-        target_actual = min_length + (max_length - min_length) * target_length
-        error = target_actual - cable_lengths[:, i]
+        # Both target and actual are now normalized (0-1), so error calculation is direct
+        error = target_lengths[:, i] - cable_lengths[:, i]
         ax3.plot(time_array, error, color=colors[i], 
                 label=f'Actuator {i+1}', linewidth=1.5, alpha=0.8)
     
     ax3.set_xlabel('Time (seconds)')
-    ax3.set_ylabel('Error (m)')
-    ax3.set_title('PID Error (Target - Actual)')
+    ax3.set_ylabel('Error (Normalized)')
+    ax3.set_title('PID Error (Target - Actual, Normalized)')
     ax3.grid(True, alpha=0.3)
     ax3.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
     ax3.axhline(y=0, color='black', linestyle='-', alpha=0.5, linewidth=1)

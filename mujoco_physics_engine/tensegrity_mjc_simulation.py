@@ -36,7 +36,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         self.max_cable_length = 1.6 # unit: meters*10 # NOTE: was 2.4 but changed to match PID default
         self.n_actuators = num_actuated_cables
         self.curr_ctrl = [0.0 for _ in range(num_actuated_cables)]
-        self.pids = [PID(debug_enabled=self.debug_enabled) for _ in range(num_actuated_cables)] # NOTE: should this take in the min and max lengths?
+        self.pids = [PID(dt=self.dt, debug_enabled=self.debug_enabled) for _ in range(num_actuated_cables)] # Pass correct timestep
         self.cable_motors = [DCMotor(debug_enabled=self.debug_enabled) for _ in range(num_actuated_cables)]
         self.n_rods = num_rods
         self.n_cables = self.mjc_model.tendon_stiffness.shape[0]
@@ -177,12 +177,13 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
                 debug_print(f"cable_sites[{self.actuated_ids[i]}][0]: {self.cable_sites[self.actuated_ids[i]][0]}", "tensegrity_mjc_simulation.py", self.debug_enabled)
                 curr_length = np.linalg.norm(s1 - s0)
                 
-                ctrl, _ = self.pids[i].update_control_by_target_norm_length(curr_length, lengths, rest_length,self.min_cable_length, self.max_cable_length)
+                ctrl, _ = self.pids[i].update_control_by_target_norm_length(curr_length, lengths, rest_length, self.min_cable_length, self.max_cable_length)
                 controls[i] = -1.0*ctrl
                 # print(f"PID Control for cable {i} (actuated_id {self.actuated_ids[i]}): {ctrl}, Target norm length: {lengths}, Current length: {curr_length}, Rest length: {rest_length}")
 
-            for i in range(3):
-                controls[i+6] = controls[i+3]
+            # Constrain cables that are mirrored to have same control as their pair
+            # for i in range(3):
+            #     controls[i+6] = controls[i+3]
                 # print(f"Control for cable {i+6} (actuated_id {self.actuated_ids[i+6]}): {controls[i+6]} (mirrored from cable {i+3})")
 
         # self.forward()
@@ -267,7 +268,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         # Weighting individual reward components
         velocity_reward *= 4.0
         distance_reward *= 15.0 
-        penalties *= 0.0  #Making this 1 did eliminate the oscillations, which is good
+        penalties *= 0.5  #Making this 1 did eliminate the oscillations, which is good
 
         reward = velocity_reward + distance_reward + penalties
         

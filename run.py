@@ -73,14 +73,14 @@ def run_roll_sequence():
     # ])
 
     # 3. Offset and flipped pattern repeated n times (this pattern shuffle locomotes)
-    # base_sequence = np.array([
-    #     [1.0, 1.0, 0.1, 1.0, 1.0, 0.1,   0.1, 0.8, 0.0, 1.0, 1.0, 0.0],
-    #     [0.0, 1.0, 1.0, 0.0, 0.8, 0.1,   1.0, 0.1, 1.0, 1.0, 0.1, 1.0],
-    #     [1.0, 0.1, 1.0, 1.0, 0.1, 1.0,   0.0, 0.1, 0.8, 0.0, 1.0, 1.0],
-    #     [1.0, 1.0, 0.0, 0.8, 0.1, 0.0,   1.0, 1.0, 0.1, 1.0, 1.0, 0.1],
-    #     [0.1, 1.0, 1.0, 0.1, 1.0, 1.0,   0.8, 0.0, 0.1, 1.0, 0.0, 1.0],
-    #     [1.0, 0.0, 1.0, 0.1, 0.0, 0.8,   0.1, 1.0, 1.0, 0.1, 1.0, 1.0]
-    # ])
+    base_sequence = np.array([
+        [1.0, 1.0, 0.1, 1.0, 1.0, 0.1,   0.1, 0.8, 0.0, 1.0, 1.0, 0.0],
+        [0.0, 1.0, 1.0, 0.0, 0.8, 0.1,   1.0, 0.1, 1.0, 1.0, 0.1, 1.0],
+        [1.0, 0.1, 1.0, 1.0, 0.1, 1.0,   0.0, 0.1, 0.8, 0.0, 1.0, 1.0],
+        [1.0, 1.0, 0.0, 0.8, 0.1, 0.0,   1.0, 1.0, 0.1, 1.0, 1.0, 0.1],
+        [0.1, 1.0, 1.0, 0.1, 1.0, 1.0,   0.8, 0.0, 0.1, 1.0, 0.0, 1.0],
+        [1.0, 0.0, 1.0, 0.1, 0.0, 0.8,   0.1, 1.0, 1.0, 0.1, 1.0, 1.0]
+    ])
 
     # # Testing which cables belong to the connected nodes
     # base_sequence = np.array([
@@ -104,33 +104,33 @@ def run_roll_sequence():
     # Shuffling gait for dual tensegrity robot
     # Strategy: Alternate contraction patterns between tensegrities to create shuffling motion
     # First 6 actuators control first tensegrity, last 6 control second tensegrity
-    base_sequence = np.array([
-        # Step 1: Both tensegrities at rest position
-        [1.0, 1.0, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+    # base_sequence = np.array([
+    #     # Step 1: Both tensegrities at rest position
+    #     [1.0, 1.0, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         
-        # Step 2: First tensegrity contracts front cables, second stays extended
-        [0.3, 0.3, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+    #     # Step 2: First tensegrity contracts front cables, second stays extended
+    #     [0.3, 0.3, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         
-        # Step 3: First tensegrity contracts more, second starts to contract rear
-        [0.2, 0.2, 0.8, 0.8, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 0.3, 0.3],
+    #     # Step 3: First tensegrity contracts more, second starts to contract rear
+    #     [0.2, 0.2, 0.8, 0.8, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 0.3, 0.3],
         
-        # Step 4: Transition - first extends rear, second contracts front
-        [0.2, 0.2, 1.0, 1.0, 0.3, 0.3,   0.3, 0.3, 1.0, 1.0, 0.2, 0.2],
+    #     # Step 4: Transition - first extends rear, second contracts front
+    #     [0.2, 0.2, 1.0, 1.0, 0.3, 0.3,   0.3, 0.3, 1.0, 1.0, 0.2, 0.2],
         
-        # Step 5: First extends, second fully contracts front
-        [0.8, 0.8, 1.0, 1.0, 0.8, 0.8,   0.2, 0.2, 0.8, 0.8, 0.2, 0.2],
+    #     # Step 5: First extends, second fully contracts front
+    #     [0.8, 0.8, 1.0, 1.0, 0.8, 0.8,   0.2, 0.2, 0.8, 0.8, 0.2, 0.2],
         
-        # Step 6: Both extend to transition state
-        [1.0, 1.0, 1.0, 1.0, 1.0, 1.0,   0.8, 0.8, 1.0, 1.0, 0.8, 0.8],
+    #     # Step 6: Both extend to transition state
+    #     [1.0, 1.0, 1.0, 1.0, 1.0, 1.0,   0.8, 0.8, 1.0, 1.0, 0.8, 0.8],
         
-        # Step 7: Second tensegrity extends fully, first starts new cycle
-        [0.3, 0.3, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+    #     # Step 7: Second tensegrity extends fully, first starts new cycle
+    #     [0.3, 0.3, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         
-        # Step 8: Return to rest for cycle completion
-        [1.0, 1.0, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
-    ])
+    #     # Step 8: Return to rest for cycle completion
+    #     [1.0, 1.0, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    # ])
     
-    n = 8  # Number of times to repeat the sequence
+    n = 1  # Number of times to repeat the sequence
     roll_sequence = np.tile(base_sequence, (n, 1))
          
     # Create output directory
@@ -157,6 +157,7 @@ def run_roll_sequence():
     pid_responses_data = []
     reward_data = []
     test_reward_data = []  
+    reward_components_data = []  # To collect reward component dictionaries
     sequence_boundaries = []  # To mark where each sequence step begins
     
     step_counter = 0
@@ -174,6 +175,13 @@ def run_roll_sequence():
         # Reset if this is the first step (to ensure proper starting position)
         if i == 0:
             sim.reset()
+            # Initialize exploration tracking right after reset
+            end_pts_initial = sim.get_endpts()
+            initial_robot_pos = end_pts_initial.mean(axis=0)
+            sim.max_distance_from_origin = 0.0
+            sim.origin_pos = initial_robot_pos[:2].copy()
+            sim.exploration_tracking_initialized = True
+            print(f"Exploration tracking initialized after reset. Origin set to: {sim.origin_pos}")
         
         # Run the simulation for multiple steps with these target lengths
         for step in range(num_steps_per_sequence):
@@ -183,6 +191,8 @@ def run_roll_sequence():
 
             # Provide the target lengths as action input
             obs, reward, done, info = sim.sim_step(target_lengths)
+            # Record the reward and its components
+            reward_data.append(reward)
 
             # Convert target_lengths to controls in [-1, 1]
             if target_lengths is not None:
@@ -204,32 +214,22 @@ def run_roll_sequence():
                     curr_length = np.linalg.norm(s1 - s0)
                     
                     ctrl, _ = sim.pids[i].update_control_by_target_norm_length(curr_length, lengths, rest_length,sim.min_cable_length, sim.max_cable_length)
-                    controls[i] = -1.0*ctrl
+                    # Handle array to scalar conversion properly
+                    if isinstance(ctrl, np.ndarray):
+                        ctrl_value = ctrl.item() if ctrl.size == 1 else ctrl[0]
+                    else:
+                        ctrl_value = ctrl
+                    controls[i] = -1.0 * ctrl_value
                     # print(f"PID Control for cable {i} (actuated_id {sim.actuated_ids[i]}): {ctrl}, Target norm length: {lengths}, Current length: {curr_length}, Rest length: {rest_length}")
 
-                for i in range(3):
-                    controls[i+6] = controls[i+3]
+                # for i in range(3):
+                #     controls[i+6] = controls[i+3]
 
-            # Record the reward and its components
-            reward_data.append(reward)
-            
             # Calculate detailed reward breakdown for analysis
             test_reward, reward_container = calculate_test_reward_function(sim, controls, target_lengths)
             test_reward_data.append(test_reward)
-            # Store individual reward components for analysis
-            reward_components = {
-                "velocity_magnitude_reward": reward_container.get("velocity_magnitude_reward", 0.0),
-                "positive_velocity_reward": reward_container.get("positive_velocity_reward", 0.0),
-                "exploration_reward": reward_container.get("exploration_reward", 0.0),
-                "base_distance_reward": reward_container.get("base_distance_reward", 0.0),
-                "control_oscillation_penalty": reward_container.get("control_oscillation_penalty", 0.0),
-                "z_speed_penalty": reward_container.get("z_speed_penalty", 0.0),
-                "energy_cost_penalty": reward_container.get("energy_cost_penalty", 0.0),
-            }
-            # for key, value in reward_components.items():
-            #     if key not in info:
-            #         info[key] = []
-            #     info[key].append(value)
+            # Store individual reward components for analysis (reward_container already contains the correct values)
+            reward_components_data.append(reward_container)  # Use reward_container directly instead of recreating
             
             # Record target lengths
             target_lengths_data.append(target_lengths.copy())
@@ -287,9 +287,10 @@ def run_roll_sequence():
     test_reward_data = np.array(test_reward_data)
     
     # Create comprehensive plots including rewards
-    create_comprehensive_analysis_plots(time_data, target_lengths_data, actual_lengths_data, 
-                                      pid_responses_data, reward_data, test_reward_data, reward_components,
-                                      sequence_boundaries, output_dir, timestamp)
+    fig1, fig2 = create_comprehensive_analysis_plots(time_data, target_lengths_data, actual_lengths_data, 
+                                      pid_responses_data, reward_data, test_reward_data, reward_components_data,
+                                      sequence_boundaries, output_dir, timestamp,
+                                      sim.min_cable_length, sim.max_cable_length)
 
     # # Create plots
     # create_cable_analysis_plots(time_data, target_lengths_data, actual_lengths_data, 
@@ -308,17 +309,20 @@ def calculate_test_reward_function(sim,controls,target_lengths):
     ### Calculate velocity magnitude reward
     
     if hasattr(sim, 'prev_pos') and sim.prev_pos is not None:
+        print("Inside velocity magnitude reward calculation")
         # Calculate XY plane displacement
         xy_displacement = robot_pos[:2] - sim.prev_pos[:2]  # [x, y] only
         xy_speed = np.linalg.norm(xy_displacement) / sim.dt
         
         velocity_magnitude_reward = xy_speed # Reward any XY movement with large magnitude
+        print("XY speed: ", xy_speed)
 
     ### Calculate positive velocity reward (forward movement)
     
     forward_direction = 0  # Assuming +x is forward direction
     positive_velocity_reward = 0.0
     if hasattr(sim, 'prev_pos') and sim.prev_pos is not None:
+        print("Inside positive velocity reward calculation")
         # Calculate XY plane displacement
         xy_displacement = robot_pos[:2] - sim.prev_pos[:2]  # [x, y] only
         # Reward positive forward velocity (assuming +x is forward direction)
@@ -328,17 +332,30 @@ def calculate_test_reward_function(sim,controls,target_lengths):
     
     ### Add distance-based rewards (total distance from origin)
     
-    # Initialize tracking variables
-    if not hasattr(sim, 'max_distance_from_origin'):
+    # Tracking variables should already be initialized after reset
+    if not hasattr(sim, 'exploration_tracking_initialized'):
+        print("WARNING: Exploration tracking not initialized! This shouldn't happen.")
+        # Fallback initialization
         sim.max_distance_from_origin = 0.0
-        sim.origin_pos = robot_pos[:2].copy()  # Store starting position
+        sim.origin_pos = robot_pos[:2].copy()
+        sim.exploration_tracking_initialized = True
+    
+    print(f"Max distance from origin: {sim.max_distance_from_origin:.6f}")
     # Calculate distance from origin in XY plane
     xy_distance_from_origin = np.linalg.norm(robot_pos[:2] - sim.origin_pos)
+    print(f"Current distance from origin: {xy_distance_from_origin:.6f}")
+    
     # Reward for reaching new maximum distances
+    # Use a small tolerance to handle floating-point precision issues
+    distance_tolerance = 1e-6
     exploration_reward = 0.0
-    if xy_distance_from_origin > sim.max_distance_from_origin:
-        exploration_reward = (xy_distance_from_origin - sim.max_distance_from_origin)
+    if xy_distance_from_origin > (sim.max_distance_from_origin + distance_tolerance):
+        distance_increase = xy_distance_from_origin - sim.max_distance_from_origin
+        print(f"New max distance reached! {sim.max_distance_from_origin:.6f} -> {xy_distance_from_origin:.6f} (+{distance_increase:.6f})")
+        exploration_reward = distance_increase
         sim.max_distance_from_origin = xy_distance_from_origin
+    else:
+        print(f"No new max distance. Difference: {xy_distance_from_origin - sim.max_distance_from_origin:.6f}")
     # Base distance reward (encourages staying away from origin)
     base_distance_reward = xy_distance_from_origin
 
@@ -355,7 +372,7 @@ def calculate_test_reward_function(sim,controls,target_lengths):
     control_oscillation_penalty = 0.0
     if hasattr(sim, 'prev_controls'):
         control_change = np.sum(np.abs(controls - sim.prev_controls)) # max value should be 12?
-        if control_change > 2.0:  # Too rapid changes
+        if control_change > 6.0:  # Too rapid changes
             control_oscillation_penalty = -1.0 * control_change
     sim.prev_controls = controls.copy()
     
@@ -394,29 +411,34 @@ def calculate_test_reward_function(sim,controls,target_lengths):
         "energy_cost_penalty": energy_cost_penalty
     }
 
+    print("------")
+
     return reward, reward_components
 
 def create_comprehensive_analysis_plots(time_data, target_lengths_data, actual_lengths_data, 
                                        pid_responses_data, reward_data, test_reward_data, reward_components,
-                                       sequence_boundaries, output_dir, timestamp):
+                                       sequence_boundaries, output_dir, timestamp, 
+                                       min_cable_length, max_cable_length):
     """
     Create comprehensive plots including reward analysis.
+    Creates two separate figures: one for cable/PID data, one for reward analysis.
     """
     n_actuators = target_lengths_data.shape[1]
     
     # Color map for different actuators
     colors = plt.cm.tab20(np.linspace(0, 1, n_actuators))
     
-    # Create figure with multiple subplots (now with 4 subplots)
-    fig = plt.figure(figsize=(16, 16))
+    # ===============================
+    # FIGURE 1: Cable and PID Analysis (3 subplots)
+    # ===============================
+    fig1 = plt.figure(figsize=(16, 12))
+    fig1.suptitle('Cable Length and PID Control Analysis', fontsize=16, fontweight='bold')
     
     # Plot 1: Target vs Actual Cable Lengths for all actuators
-    ax1 = plt.subplot(4, 1, 1)
+    ax1 = plt.subplot(3, 1, 1)
     for i in range(n_actuators):
-        # Convert normalized target to actual target length for comparison
-        min_length = 0.1  # From PID implementation
-        max_length = 1.0
-        target_actual = min_length + (max_length - min_length) * target_lengths_data[:, i]
+        # Convert normalized target to actual target length using simulator bounds
+        target_actual = min_cable_length + (max_cable_length - min_cable_length) * target_lengths_data[:, i]
         
         ax1.plot(time_data, actual_lengths_data[:, i], color=colors[i], 
                 linewidth=1.5, alpha=0.8, label=f'Actuator {i+1} (Actual)')
@@ -433,7 +455,7 @@ def create_comprehensive_analysis_plots(time_data, target_lengths_data, actual_l
     ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
     
     # Plot 2: PID Control Signals
-    ax2 = plt.subplot(4, 1, 2)
+    ax2 = plt.subplot(3, 1, 2)
     for i in range(n_actuators):
         ax2.plot(time_data, pid_responses_data[:, i], color=colors[i], 
                 linewidth=1.5, alpha=0.8, label=f'Actuator {i+1}')
@@ -449,7 +471,7 @@ def create_comprehensive_analysis_plots(time_data, target_lengths_data, actual_l
     ax2.axhline(y=0, color='black', linestyle='-', alpha=0.3, linewidth=1)
     
     # Plot 3: Total Reward over Time
-    ax3 = plt.subplot(4, 1, 3)
+    ax3 = plt.subplot(3, 1, 3)
     ax3.plot(time_data, reward_data, 'purple', linewidth=2, label='Total Reward')
     ax3.plot(time_data, test_reward_data, 'red', linewidth=2, label='Total Test Reward')
     
@@ -457,52 +479,87 @@ def create_comprehensive_analysis_plots(time_data, target_lengths_data, actual_l
     for boundary in sequence_boundaries[1:]:
         ax3.axvline(x=boundary, color='red', linestyle=':', alpha=0.5, linewidth=1)
     
+    ax3.set_xlabel('Time (seconds)')
     ax3.set_ylabel('Reward')
     ax3.set_title('Total Reward over Time')
     ax3.grid(True, alpha=0.3)
     ax3.legend()
     ax3.axhline(y=0, color='black', linestyle='-', alpha=0.3, linewidth=1)
     
-    # Plot 4: Reward Components Breakdown
-    ax4 = plt.subplot(4, 1, 4)
-    if len(reward_components) > 0 and isinstance(reward_components, list):
-        if isinstance(reward_components[0], dict):
-            component_names = list(reward_components[0].keys())
-            
-            for component_name in component_names:
-                component_values = [step_data.get(component_name, 0.0) for step_data in reward_components]
-                
-                if len(component_values) == len(time_data):
-                    ax4.plot(time_data, component_values, label=component_name.replace('_', ' ').title(), 
-                            linewidth=1.5, alpha=0.8)
-                    
-    # Add sequence boundaries
-    for boundary in sequence_boundaries[1:]:
-        ax4.axvline(x=boundary, color='red', linestyle=':', alpha=0.5, linewidth=1)
-    
-    ax4.set_xlabel('Time (seconds)')
-    ax4.set_ylabel('Reward Component Value')
-    ax4.set_title('Reward Components Breakdown')
-    ax4.grid(True, alpha=0.3)
-    ax4.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
-    ax4.axhline(y=0, color='black', linestyle='-', alpha=0.3, linewidth=1)
-    
     # Add text annotation about sequence boundaries
-    fig.text(0.02, 0.02, 'Red dotted lines indicate sequence step changes', 
+    fig1.text(0.02, 0.02, 'Red dotted lines indicate sequence step changes', 
              fontsize=10, style='italic', alpha=0.7)
     
     plt.tight_layout()
     
-    # Save the plot
-    # plot_filename = f"comprehensive_analysis_{timestamp}.png"
-    # plt.savefig(output_dir / plot_filename, dpi=300, bbox_inches='tight')
-    # print(f"Comprehensive analysis plot saved as {plot_filename}")
+    # ===============================
+    # FIGURE 2: Reward Analysis (Total + Individual Components)
+    # ===============================
     
-    # Create reward statistics summary
-    # create_reward_statistics_summary(time_data, reward_data, reward_components_data, 
-    #                                sequence_boundaries, output_dir, timestamp)
+    # Determine number of reward components
+    component_names = []
+    if len(reward_components) > 0 and isinstance(reward_components, list):
+        if isinstance(reward_components[0], dict):
+            component_names = list(reward_components[0].keys())
     
+    # Create figure with total reward + individual component subplots
+    n_components = len(component_names)
+    n_rows = max(2, n_components + 1)  # At least 2 rows (total + 1 component), or more if needed
+    
+    fig2 = plt.figure(figsize=(16, 4 * n_rows))
+    fig2.suptitle('Detailed Reward Analysis', fontsize=16, fontweight='bold')
+    
+    # Plot 1: Total Rewards (same as Plot 3 from Figure 1)
+    ax_total = plt.subplot(n_rows, 1, 1)
+    ax_total.plot(time_data, reward_data, 'purple', linewidth=2, label='Total Reward')
+    ax_total.plot(time_data, test_reward_data, 'red', linewidth=2, label='Total Test Reward')
+    
+    # Add sequence boundaries
+    for boundary in sequence_boundaries[1:]:
+        ax_total.axvline(x=boundary, color='red', linestyle=':', alpha=0.5, linewidth=1)
+    
+    ax_total.set_ylabel('Reward')
+    ax_total.set_title('Total Reward over Time')
+    ax_total.grid(True, alpha=0.3)
+    ax_total.legend()
+    ax_total.axhline(y=0, color='black', linestyle='-', alpha=0.3, linewidth=1)
+    
+    # Individual component plots
+    component_colors = plt.cm.Set3(np.linspace(0, 1, len(component_names)))
+    
+    for idx, component_name in enumerate(component_names):
+        ax_comp = plt.subplot(n_rows, 1, idx + 2)
+        
+        component_values = [step_data.get(component_name, 0.0) for step_data in reward_components]
+        
+        if len(component_values) == len(time_data):
+            ax_comp.plot(time_data, component_values, 
+                        color=component_colors[idx], linewidth=2, 
+                        label=component_name.replace('_', ' ').title())
+            
+            # Add sequence boundaries
+            for boundary in sequence_boundaries[1:]:
+                ax_comp.axvline(x=boundary, color='red', linestyle=':', alpha=0.5, linewidth=1)
+            
+            ax_comp.set_ylabel('Component Value')
+            ax_comp.set_title(component_name.replace('_', ' ').title())
+            ax_comp.grid(True, alpha=0.3)
+            ax_comp.axhline(y=0, color='black', linestyle='-', alpha=0.3, linewidth=1)
+            
+            # Only add x-label to the last subplot
+            if idx == len(component_names) - 1:
+                ax_comp.set_xlabel('Time (seconds)')
+    
+    # Add text annotation about sequence boundaries
+    fig2.text(0.02, 0.02, 'Red dotted lines indicate sequence step changes', 
+             fontsize=10, style='italic', alpha=0.7)
+    
+    plt.tight_layout()
+    
+    # Show both figures
     plt.show()
+    
+    return fig1, fig2
 
 def create_reward_statistics_summary(time_data, reward_data, reward_components_data, 
                                    sequence_boundaries, output_dir, timestamp):
@@ -536,7 +593,8 @@ def create_reward_statistics_summary(time_data, reward_data, reward_components_d
     print(f"Worst Sequence Reward: {min(sequence_rewards):.3f} (Sequence {sequence_rewards.index(min(sequence_rewards))+1})")
 
 def create_cable_analysis_plots(time_data, target_lengths_data, actual_lengths_data, 
-                               pid_responses_data, sequence_boundaries, output_dir, timestamp):
+                               pid_responses_data, sequence_boundaries, output_dir, timestamp,
+                               min_cable_length, max_cable_length):
     """
     Create comprehensive plots showing target lengths, actual lengths, and PID responses.
     """
@@ -551,10 +609,8 @@ def create_cable_analysis_plots(time_data, target_lengths_data, actual_lengths_d
     # Plot 1: Target vs Actual Cable Lengths for all actuators
     ax1 = plt.subplot(3, 1, 1)
     for i in range(n_actuators):
-        # Convert normalized target to actual target length for comparison
-        min_length = 0.1  # From PID implementation
-        max_length = 1.0
-        target_actual = min_length + (max_length - min_length) * target_lengths_data[:, i]
+        # Convert normalized target to actual target length using simulator bounds
+        target_actual = min_cable_length + (max_cable_length - min_cable_length) * target_lengths_data[:, i]
         
         ax1.plot(time_data, actual_lengths_data[:, i], color=colors[i], 
                 linewidth=1.5, alpha=0.8, label=f'Actuator {i+1} (Actual)')
@@ -589,9 +645,7 @@ def create_cable_analysis_plots(time_data, target_lengths_data, actual_lengths_d
     # Plot 3: Error (Target - Actual) for each actuator
     ax3 = plt.subplot(3, 1, 3)
     for i in range(n_actuators):
-        min_length = 0.1
-        max_length = 1.0
-        target_actual = min_length + (max_length - min_length) * target_lengths_data[:, i]
+        target_actual = min_cable_length + (max_cable_length - min_cable_length) * target_lengths_data[:, i]
         error = target_actual - actual_lengths_data[:, i]
         ax3.plot(time_data, error, color=colors[i], 
                 linewidth=1.5, alpha=0.8, label=f'Actuator {i+1}')
@@ -620,13 +674,15 @@ def create_cable_analysis_plots(time_data, target_lengths_data, actual_lengths_d
     
     # Create individual actuator plots for detailed analysis
     create_individual_actuator_plots(time_data, target_lengths_data, actual_lengths_data, 
-                                   pid_responses_data, sequence_boundaries, output_dir, timestamp)
+                                   pid_responses_data, sequence_boundaries, output_dir, timestamp,
+                                   min_cable_length, max_cable_length)
     
     plt.show()
 
 
 def create_individual_actuator_plots(time_data, target_lengths_data, actual_lengths_data, 
-                                   pid_responses_data, sequence_boundaries, output_dir, timestamp):
+                                   pid_responses_data, sequence_boundaries, output_dir, timestamp,
+                                   min_cable_length, max_cable_length):
     """
     Create individual plots for each actuator showing detailed response.
     """
@@ -649,10 +705,8 @@ def create_individual_actuator_plots(time_data, target_lengths_data, actual_leng
             ax = axes2[(i-6) // 3, (i-6) % 3]
             fig_num = 2
         
-        # Convert normalized target to actual target length
-        min_length = 0.1
-        max_length = 1.0
-        target_actual = min_length + (max_length - min_length) * target_lengths_data[:, i]
+        # Convert normalized target to actual target length using simulator bounds
+        target_actual = min_cable_length + (max_cable_length - min_cable_length) * target_lengths_data[:, i]
         error = target_actual - actual_lengths_data[:, i]
         
         # Plot actual length, target, and error

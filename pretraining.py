@@ -190,7 +190,7 @@ for epoch in range(num_epochs):
         print(f"Epoch {epoch}, Loss: {avg_epoch_loss:.6f}")
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-model.save(f"tensegrity_gait_seeded_before_RL_{timestamp}")
+model.save(f"trained_models/ppo_tensegrity_gait_seeded_before_RL_{timestamp}")
 
 # Now continue with regular RL training
 print("Starting RL training...")
@@ -198,5 +198,5 @@ model.learn(total_timesteps=3_000_000)
 
 # Save the model with a timestamp to prevent overwriting files
 
-timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-model.save(f"ppo_tensegrity_gait_seeded_{timestamp}")
+# timestamp = datetime.now().strftime("%Y%m%d_%H%M%S") # commented out to keep same timestamp as before RL
+model.save(f"trained_models/ppo_tensegrity_gait_seeded_{timestamp}")
