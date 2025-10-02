@@ -26,7 +26,10 @@ class TensegrityEnv(gym.Env):
             visualize=visualize,
             render_size=(800, 600),
             render_fps=30,
-            debug_enabled=debug_enabled
+            debug_enabled=debug_enabled,
+            controller_kp=10.0,
+            controller_ki=0.2,
+            controller_kd=2.0
         )
         
         debug_print(f"Simulator.__init__ called with visualize={visualize}", "tensegrity_env.py", debug_enabled)

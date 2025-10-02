@@ -73,14 +73,14 @@ def run_roll_sequence():
     # ])
 
     # 3. Offset and flipped pattern repeated n times (this pattern shuffle locomotes)
-    base_sequence = np.array([
-        [1.0, 1.0, 0.1, 1.0, 1.0, 0.1,   0.1, 0.8, 0.0, 1.0, 1.0, 0.0],
-        [0.0, 1.0, 1.0, 0.0, 0.8, 0.1,   1.0, 0.1, 1.0, 1.0, 0.1, 1.0],
-        [1.0, 0.1, 1.0, 1.0, 0.1, 1.0,   0.0, 0.1, 0.8, 0.0, 1.0, 1.0],
-        [1.0, 1.0, 0.0, 0.8, 0.1, 0.0,   1.0, 1.0, 0.1, 1.0, 1.0, 0.1],
-        [0.1, 1.0, 1.0, 0.1, 1.0, 1.0,   0.8, 0.0, 0.1, 1.0, 0.0, 1.0],
-        [1.0, 0.0, 1.0, 0.1, 0.0, 0.8,   0.1, 1.0, 1.0, 0.1, 1.0, 1.0]
-    ])
+    # base_sequence = np.array([
+    #     [1.0, 1.0, 0.1, 1.0, 1.0, 0.1,   0.1, 0.8, 0.0, 1.0, 1.0, 0.0],
+    #     [0.0, 1.0, 1.0, 0.0, 0.8, 0.1,   1.0, 0.1, 1.0, 1.0, 0.1, 1.0],
+    #     [1.0, 0.1, 1.0, 1.0, 0.1, 1.0,   0.0, 0.1, 0.8, 0.0, 1.0, 1.0],
+    #     [1.0, 1.0, 0.0, 0.8, 0.1, 0.0,   1.0, 1.0, 0.1, 1.0, 1.0, 0.1],
+    #     [0.1, 1.0, 1.0, 0.1, 1.0, 1.0,   0.8, 0.0, 0.1, 1.0, 0.0, 1.0],
+    #     [1.0, 0.0, 1.0, 0.1, 0.0, 0.8,   0.1, 1.0, 1.0, 0.1, 1.0, 1.0]
+    # ])
 
     # # Testing which cables belong to the connected nodes
     # base_sequence = np.array([
@@ -89,17 +89,13 @@ def run_roll_sequence():
     # ])
 
     # # Hand designing double tensegrity gait
-    # base_sequence = np.array([
-    #     [1.0, 1.0, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-    #     [1.0, 1.0, 1.0, 0.2, 1.0, 0.2,   0.2, 1.0, 0.2, 1.0, 1.0, 1.0],
-    #     [1.0, 1.0, 1.0, 0.2, 0.2, 0.2,   0.2, 0.2, 0.2, 1.0, 1.0, 1.0]
-    # ])
-
-    # # Hand designing double tensegrity gait
-    # base_sequence = np.array([
-    #     [1.0, 1.0, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-    #     [0.3, 0.3, 0.3, 0.3, 0.3, 0.3,   0.3, 0.3, 0.3, 0.3, 0.3, 0.3]
-    # ])
+    base_sequence = np.array([
+        [1.0, 1.0, 0.1, 1.0, 1.0, 0.1,   0.1, 0.8, 0.0, 1.0, 1.0, 0.0],
+        [0.0, 1.0, 1.0, 0.0, 0.8, 0.1,   1.0, 0.1, 1.0, 1.0, 0.1, 1.0],
+        [1.0, 0.1, 1.0, 1.0, 0.1, 1.0,   0.0, 0.1, 0.8, 0.0, 1.0, 1.0],
+        [1.0, 1.0, 0.0, 0.8, 0.1, 0.0,   1.0, 1.0, 0.1, 1.0, 1.0, 0.1],
+        [1.0, 1.0, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    ])
 
     # Shuffling gait for dual tensegrity robot
     # Strategy: Alternate contraction patterns between tensegrities to create shuffling motion
@@ -107,39 +103,32 @@ def run_roll_sequence():
     # base_sequence = np.array([
     #     # Step 1: Both tensegrities at rest position
     #     [1.0, 1.0, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-        
     #     # Step 2: First tensegrity contracts front cables, second stays extended
     #     [0.3, 0.3, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-        
     #     # Step 3: First tensegrity contracts more, second starts to contract rear
     #     [0.2, 0.2, 0.8, 0.8, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 0.3, 0.3],
-        
     #     # Step 4: Transition - first extends rear, second contracts front
     #     [0.2, 0.2, 1.0, 1.0, 0.3, 0.3,   0.3, 0.3, 1.0, 1.0, 0.2, 0.2],
-        
     #     # Step 5: First extends, second fully contracts front
     #     [0.8, 0.8, 1.0, 1.0, 0.8, 0.8,   0.2, 0.2, 0.8, 0.8, 0.2, 0.2],
-        
     #     # Step 6: Both extend to transition state
     #     [1.0, 1.0, 1.0, 1.0, 1.0, 1.0,   0.8, 0.8, 1.0, 1.0, 0.8, 0.8],
-        
     #     # Step 7: Second tensegrity extends fully, first starts new cycle
     #     [0.3, 0.3, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-        
     #     # Step 8: Return to rest for cycle completion
     #     [1.0, 1.0, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
     # ])
     
-    n = 1  # Number of times to repeat the sequence
+    n = 5  # Number of times to repeat the sequence
     roll_sequence = np.tile(base_sequence, (n, 1))
-         
+    
     # Create output directory
     output_dir = Path('sim_output')
     output_dir.mkdir(exist_ok=True)
     
     # Load the XML model and create simulator
     xml = Path('mujoco_physics_engine/xml_models/two_3bar_new_platform_config_1.xml')
-    sim = TensegrityMuJoCoSimulator(xml, visualize=True)
+    sim = TensegrityMuJoCoSimulator(xml, controller_kp=10.0, controller_ki=0.2, controller_kd=2.0, visualize=True)
     
     # Set up video capture
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -178,7 +167,7 @@ def run_roll_sequence():
             # Initialize exploration tracking right after reset
             end_pts_initial = sim.get_endpts()
             initial_robot_pos = end_pts_initial.mean(axis=0)
-            sim.max_distance_from_origin = 0.0
+            max_distance_from_origin = 0.0
             sim.origin_pos = initial_robot_pos[:2].copy()
             sim.exploration_tracking_initialized = True
             print(f"Exploration tracking initialized after reset. Origin set to: {sim.origin_pos}")
@@ -189,6 +178,9 @@ def run_roll_sequence():
             current_time = step_counter * sim.dt
             time_data.append(current_time)
 
+            # Store the previous position before it gets reset in sim_step
+            end_pts = sim.get_endpts()
+            prev_pos = end_pts.mean(axis=0)  # Use the mean of end points as the robot's position
             # Provide the target lengths as action input
             obs, reward, done, info = sim.sim_step(target_lengths)
             # Record the reward and its components
@@ -222,11 +214,11 @@ def run_roll_sequence():
                     controls[i] = -1.0 * ctrl_value
                     # print(f"PID Control for cable {i} (actuated_id {sim.actuated_ids[i]}): {ctrl}, Target norm length: {lengths}, Current length: {curr_length}, Rest length: {rest_length}")
 
-                # for i in range(3):
-                #     controls[i+6] = controls[i+3]
+                for i in range(3):
+                    controls[i+6] = controls[i+3]
 
             # Calculate detailed reward breakdown for analysis
-            test_reward, reward_container = calculate_test_reward_function(sim, controls, target_lengths)
+            test_reward, reward_container, max_distance_from_origin = calculate_test_reward_function(sim, controls, target_lengths, prev_pos, max_distance_from_origin)
             test_reward_data.append(test_reward)
             # Store individual reward components for analysis (reward_container already contains the correct values)
             reward_components_data.append(reward_container)  # Use reward_container directly instead of recreating
@@ -296,7 +288,7 @@ def run_roll_sequence():
     # create_cable_analysis_plots(time_data, target_lengths_data, actual_lengths_data, 
     #                            pid_responses_data, sequence_boundaries, output_dir, timestamp)
 
-def calculate_test_reward_function(sim,controls,target_lengths):
+def calculate_test_reward_function(sim, controls, target_lengths, prev_pos, max_distance_from_origin):
     # This function for testing different potential reward functions
 
     ### Get end points for locomotion reward
@@ -304,27 +296,29 @@ def calculate_test_reward_function(sim,controls,target_lengths):
     robot_pos = end_pts.mean(axis=0)  # Use the mean of end points as the robot's position
 
     # Debugging
-    # print("Robot position: ", sim.prev_pos)
+    # print("Robot position: ", prev_pos)
     
     ### Calculate velocity magnitude reward
     
-    if hasattr(sim, 'prev_pos') and sim.prev_pos is not None:
-        print("Inside velocity magnitude reward calculation")
+    if prev_pos is not None:
+        # print("Inside velocity magnitude reward calculation")
         # Calculate XY plane displacement
-        xy_displacement = robot_pos[:2] - sim.prev_pos[:2]  # [x, y] only
+        # print("Previous position: ", prev_pos)
+        # print("Current position: ", robot_pos)
+        xy_displacement = robot_pos[:2] - prev_pos[:2]  # [x, y] only
         xy_speed = np.linalg.norm(xy_displacement) / sim.dt
         
         velocity_magnitude_reward = xy_speed # Reward any XY movement with large magnitude
-        print("XY speed: ", xy_speed)
+        # print("XY speed: ", xy_speed)
 
     ### Calculate positive velocity reward (forward movement)
     
     forward_direction = 0  # Assuming +x is forward direction
     positive_velocity_reward = 0.0
-    if hasattr(sim, 'prev_pos') and sim.prev_pos is not None:
-        print("Inside positive velocity reward calculation")
+    if prev_pos is not None:
+        # print("Inside positive velocity reward calculation")
         # Calculate XY plane displacement
-        xy_displacement = robot_pos[:2] - sim.prev_pos[:2]  # [x, y] only
+        xy_displacement = robot_pos[:2] - prev_pos[:2]  # [x, y] only
         # Reward positive forward velocity (assuming +x is forward direction)
         forward_velocity = xy_displacement[forward_direction] / sim.dt  # x-component of velocity
         if forward_velocity > 0:
@@ -334,28 +328,28 @@ def calculate_test_reward_function(sim,controls,target_lengths):
     
     # Tracking variables should already be initialized after reset
     if not hasattr(sim, 'exploration_tracking_initialized'):
-        print("WARNING: Exploration tracking not initialized! This shouldn't happen.")
+        # print("WARNING: Exploration tracking not initialized! This shouldn't happen.")
         # Fallback initialization
-        sim.max_distance_from_origin = 0.0
+        max_distance_from_origin = 0.0
         sim.origin_pos = robot_pos[:2].copy()
         sim.exploration_tracking_initialized = True
     
-    print(f"Max distance from origin: {sim.max_distance_from_origin:.6f}")
+    # print(f"Max distance from origin: {max_distance_from_origin:.6f}")
     # Calculate distance from origin in XY plane
     xy_distance_from_origin = np.linalg.norm(robot_pos[:2] - sim.origin_pos)
-    print(f"Current distance from origin: {xy_distance_from_origin:.6f}")
+    # print(f"Current distance from origin: {xy_distance_from_origin:.6f}")
     
     # Reward for reaching new maximum distances
     # Use a small tolerance to handle floating-point precision issues
     distance_tolerance = 1e-6
     exploration_reward = 0.0
-    if xy_distance_from_origin > (sim.max_distance_from_origin + distance_tolerance):
-        distance_increase = xy_distance_from_origin - sim.max_distance_from_origin
-        print(f"New max distance reached! {sim.max_distance_from_origin:.6f} -> {xy_distance_from_origin:.6f} (+{distance_increase:.6f})")
+    if xy_distance_from_origin > (max_distance_from_origin + distance_tolerance):
+        distance_increase = xy_distance_from_origin - max_distance_from_origin
+        # print(f"New max distance reached! {max_distance_from_origin:.6f} -> {xy_distance_from_origin:.6f} (+{distance_increase:.6f})")
         exploration_reward = distance_increase
-        sim.max_distance_from_origin = xy_distance_from_origin
-    else:
-        print(f"No new max distance. Difference: {xy_distance_from_origin - sim.max_distance_from_origin:.6f}")
+        max_distance_from_origin = xy_distance_from_origin
+    # else:
+    #     print(f"No new max distance. Difference: {xy_distance_from_origin - max_distance_from_origin:.6f}")
     # Base distance reward (encourages staying away from origin)
     base_distance_reward = xy_distance_from_origin
 
@@ -363,8 +357,8 @@ def calculate_test_reward_function(sim,controls,target_lengths):
 
     # 1. Prevent excessive bouncing (z-axis exploitation)
     z_speed_penalty = 0.0
-    if hasattr(sim, 'prev_pos') and sim.prev_pos is not None:
-        z_speed = abs((robot_pos[2] - sim.prev_pos[2]) / sim.dt)
+    if prev_pos is not None:
+        z_speed = abs((robot_pos[2] - prev_pos[2]) / sim.dt)
         if z_speed > 1.0:  # Too much vertical movement
             z_speed_penalty = -1.0 * z_speed
     
@@ -383,12 +377,12 @@ def calculate_test_reward_function(sim,controls,target_lengths):
     # Weighting individual reward components
     velocity_magnitude_reward *= 1.0
     positive_velocity_reward *= 1.0
-    exploration_reward *= 1.0
+    exploration_reward *= 1000.0
     base_distance_reward *= 1.0
     # Weighting individual penalty components (quantities should already be negative)
-    control_oscillation_penalty *= 1.0
-    z_speed_penalty *= 1.0
-    energy_cost_penalty *= 1.0
+    control_oscillation_penalty *= 0.0
+    z_speed_penalty *= 0.0
+    energy_cost_penalty *= 0.0
 
     reward = (
         velocity_magnitude_reward
@@ -411,9 +405,9 @@ def calculate_test_reward_function(sim,controls,target_lengths):
         "energy_cost_penalty": energy_cost_penalty
     }
 
-    print("------")
+    # print("------")
 
-    return reward, reward_components
+    return reward, reward_components, max_distance_from_origin
 
 def create_comprehensive_analysis_plots(time_data, target_lengths_data, actual_lengths_data, 
                                        pid_responses_data, reward_data, test_reward_data, reward_components,
@@ -825,7 +819,7 @@ def create_individual_actuator_plots(time_data, target_lengths_data, actual_leng
 
 def run_multi_sim():
     num_sim = 3
-    xml = Path('mujoco_physics_engine/xml_models/two_3bar_new_platform_config_2.xml')
+    xml = Path('mujoco_physics_engine/xml_models/two_3bar_new_platform_config_1.xml')
     multi_sim = MultiProcTensegrityMujocoSimulator(num_sim, xml)
 
     target_lengths = [

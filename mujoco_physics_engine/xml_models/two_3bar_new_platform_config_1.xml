@@ -318,11 +318,11 @@
     </spatial>
   </tendon>
 
-  <equality>
+  <!-- <equality>
     <weld body1="t1_r45" body2="t2_r01" anchor="0 0 0"/>
     <weld body1="t1_r23" body2="t2_r45" anchor="0 0 0"/>
     <weld body1="t1_r01" body2="t2_r23" anchor="0 0 0"/>
-  </equality>
+  </equality> -->
 
   <sensor>
     <framepos objtype="site" objname="t1_s0" name="pos_t1_s0"/>

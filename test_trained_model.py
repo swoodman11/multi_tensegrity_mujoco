@@ -416,7 +416,7 @@ print(f"Observation mode: {env.sim.obs_mode}")
 
 print(f"\n=== Visualizing Robot Gait ===")
 
-for step in range(1000):  # Max steps per episode
+for step in range(5000):  # Max steps per episode
     action, _ = model.predict(obs, deterministic=True)
     # Ensure action shape is (num_actuators,)
     action = np.asarray(action).reshape(-1)
@@ -441,7 +441,7 @@ for step in range(1000):  # Max steps per episode
     # Render the robot (only if visualization is enabled)
     if not args.no_vis:
         env.render()
-        time.sleep(0.05)  # Slow down for better viewing
+        time.sleep(0.005)  # Slow down for better viewing
     
     # Print progress every 50 steps
     if step % 50 == 0:
