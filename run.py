@@ -89,12 +89,31 @@ def run_roll_sequence():
     # ])
 
     # # Hand designing double tensegrity gait
+    # base_sequence = np.array([
+    #     [1.0, 1.0, 0.1, 1.0, 1.0, 0.1,   0.1, 0.8, 0.0, 1.0, 1.0, 0.0],
+    #     [0.0, 1.0, 1.0, 0.0, 0.8, 0.1,   1.0, 0.1, 1.0, 1.0, 0.1, 1.0],
+    #     [1.0, 0.1, 1.0, 1.0, 0.1, 1.0,   0.0, 0.1, 0.8, 0.0, 1.0, 1.0],
+    #     [1.0, 1.0, 0.0, 0.8, 0.1, 0.0,   1.0, 1.0, 0.1, 1.0, 1.0, 0.1],
+    #     [1.0, 1.0, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+    # ])
+    # Steph trying shit
     base_sequence = np.array([
         [1.0, 1.0, 0.1, 1.0, 1.0, 0.1,   0.1, 0.8, 0.0, 1.0, 1.0, 0.0],
         [0.0, 1.0, 1.0, 0.0, 0.8, 0.1,   1.0, 0.1, 1.0, 1.0, 0.1, 1.0],
         [1.0, 0.1, 1.0, 1.0, 0.1, 1.0,   0.0, 0.1, 0.8, 0.0, 1.0, 1.0],
-        [1.0, 1.0, 0.0, 0.8, 0.1, 0.0,   1.0, 1.0, 0.1, 1.0, 1.0, 0.1],
-        [1.0, 1.0, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+        [1.0, 1.0, 0.0, 0.8, 0.1, 1.0,   1.0, 1.0, 0.8, 1.0, 1.0, 0.1],
+        [1.0, 1.0, 0.0, 0.8, 0.1, 1.0,   1.0, 1.0, 0.8, 1.0, 1.0, 0.1],
+        [1.0, 0.1, 0.1, 1.0, 0.1, 0.1,   1.0, 0.8, 0.1, 1.0, 1.0, 0.0],
+        [1.0, 0.5, 0.1, 1.0, 0.4, 0.1,   0.1, 0.8, 0.0, 1.0, 1.0, 0.5],
+        [0.5, 0.5, 1.0, 1.0, 0.4, 0.1,   0.1, 0.8, 0.0, 0.5, 1.0, 1.0],
+        [0.5, 0.5, 1.0, 1.0, 0.4, 0.1,   0.1, 0.8, 0.0, 0.5, 1.0, 1.0],
+        [0.5, 0.5, 1.0, 1.0, 0.4, 0.8,   0.1, 0.8, 0.8, 0.5, 1.0, 1.0],
+        [0.5, 0.5, 1.0, 0.4, 0.4, 0.8,   0.4, 0.8, 0.8, 0.5, 1.0, 1.0],
+        [0.5, 0.5, 1.0, 0.4, 0.4, 0.8,   0.4, 0.8, 0.8, 0.5, 1.0, 1.0],
+        [0.5, 0.5, 1.0, 0.4, 0.4, 0.8,   0.4, 0.8, 0.8, 0.5, 1.0, 1.0],
+        [0.5, 0.5, 1.0, 0.1, 0.4, 0.8,   0.1, 0.8, 0.8, 0.5, 1.0, 1.0],
+        [0.5, 0.5, 1.0, 0.1, 0.4, 0.8,   0.1, 0.8, 0.8, 0.5, 1.0, 1.0],
+        [0.5, 0.5, 1.0, 0.1, 0.4, 0.8,   0.1, 0.8, 0.8, 0.5, 1.0, 1.0]
     ])
 
     # Shuffling gait for dual tensegrity robot
@@ -168,6 +187,7 @@ def run_roll_sequence():
             end_pts_initial = sim.get_endpts()
             initial_robot_pos = end_pts_initial.mean(axis=0)
             max_distance_from_origin = 0.0
+            prev_imu_grav = sim._get_IMU_gravity_vectors()
             sim.origin_pos = initial_robot_pos[:2].copy()
             sim.exploration_tracking_initialized = True
             print(f"Exploration tracking initialized after reset. Origin set to: {sim.origin_pos}")
@@ -218,7 +238,7 @@ def run_roll_sequence():
                     controls[i+6] = controls[i+3]
 
             # Calculate detailed reward breakdown for analysis
-            test_reward, reward_container, max_distance_from_origin = calculate_test_reward_function(sim, controls, target_lengths, prev_pos, max_distance_from_origin)
+            test_reward, reward_container, max_distance_from_origin, prev_imu_grav = calculate_test_reward_function(sim, controls, target_lengths, prev_pos, max_distance_from_origin, prev_imu_grav)
             test_reward_data.append(test_reward)
             # Store individual reward components for analysis (reward_container already contains the correct values)
             reward_components_data.append(reward_container)  # Use reward_container directly instead of recreating
@@ -288,7 +308,7 @@ def run_roll_sequence():
     # create_cable_analysis_plots(time_data, target_lengths_data, actual_lengths_data, 
     #                            pid_responses_data, sequence_boundaries, output_dir, timestamp)
 
-def calculate_test_reward_function(sim, controls, target_lengths, prev_pos, max_distance_from_origin):
+def calculate_test_reward_function(sim, controls, target_lengths, prev_pos, max_distance_from_origin, prev_imu_grav):
     # This function for testing different potential reward functions
 
     ### Get end points for locomotion reward
@@ -373,12 +393,22 @@ def calculate_test_reward_function(sim, controls, target_lengths, prev_pos, max_
     # 3. Energy efficiency penalty
     energy_cost = np.sum(np.abs(controls))
     energy_cost_penalty = -1.0 * energy_cost
+
+    # 4. Rotation reward
+    # Reward changes in IMU orientation - encourage rotation in one direction
+    imu_reward = 0.0
+    if hasattr(sim, 'prev_imu_grav'):
+        current_imu_grav = sim._get_IMU_gravity_vectors()
+        # Calculate change in orientation (gravity vector change)
+        imu_reward = orientation_change = np.linalg.norm(current_imu_grav - prev_imu_grav)
+        prev_imu_grav = current_imu_grav.copy()
     
     # Weighting individual reward components
     velocity_magnitude_reward *= 1.0
     positive_velocity_reward *= 1.0
     exploration_reward *= 1000.0
     base_distance_reward *= 1.0
+    imu_reward *= 100.0
     # Weighting individual penalty components (quantities should already be negative)
     control_oscillation_penalty *= 0.0
     z_speed_penalty *= 0.0
@@ -389,6 +419,7 @@ def calculate_test_reward_function(sim, controls, target_lengths, prev_pos, max_
         + positive_velocity_reward 
         + exploration_reward 
         + base_distance_reward 
+        + imu_reward
         + control_oscillation_penalty
         + z_speed_penalty
         + energy_cost_penalty
@@ -400,6 +431,7 @@ def calculate_test_reward_function(sim, controls, target_lengths, prev_pos, max_
         "positive_velocity_reward": positive_velocity_reward,
         "exploration_reward": exploration_reward,
         "base_distance_reward": base_distance_reward,
+        "imu_reward": imu_reward,
         "control_oscillation_penalty": control_oscillation_penalty,
         "z_speed_penalty": z_speed_penalty,
         "energy_cost_penalty": energy_cost_penalty
@@ -407,7 +439,7 @@ def calculate_test_reward_function(sim, controls, target_lengths, prev_pos, max_
 
     # print("------")
 
-    return reward, reward_components, max_distance_from_origin
+    return reward, reward_components, max_distance_from_origin, prev_imu_grav
 
 def create_comprehensive_analysis_plots(time_data, target_lengths_data, actual_lengths_data, 
                                        pid_responses_data, reward_data, test_reward_data, reward_components,

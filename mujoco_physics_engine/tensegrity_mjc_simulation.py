@@ -135,6 +135,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         self.prev_action[:] = 0.0
         self.prev_cable_lengths = self._get_actuated_cable_lengths()
         self.prev_COM_pos = self._compute_COM_position()
+        self.prev_imu_grav = self._get_IMU_gravity_vectors()
 
         # Return observation for RL using selected mode
         observation = self.get_observation()
@@ -268,14 +269,35 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         penalties = self.calculate_anti_exploit_penalties(robot_pos, controls) #0
 
         # Reward changes in IMU orientation
-        # imu_grav = self._get_IMU_gravity_vectors()
+        # Reward changes in IMU orientation - encourage rotation in one direction
+        imu_reward = 0.0
+        if hasattr(self, 'prev_imu_grav'):
+            current_imu_grav = self._get_IMU_gravity_vectors()
+            # Calculate change in orientation (gravity vector change)
+            # Reshape to get individual IMU gravity vectors (assuming 6 IMUs x 3 components)
+            current_imu_gravs = current_imu_grav.reshape(6, 3)
+            prev_imu_gravs = self.prev_imu_grav.reshape(6, 3)
+            
+            # Focus on the X-component of the first IMU (t1_r01) for forward roll direction
+            current_gravity_x = current_imu_gravs[0, 0]
+            prev_gravity_x = prev_imu_gravs[0, 0]
+            orientation_change = current_gravity_x - prev_gravity_x  # Signed change to keep direction
+            
+            # Reward only positive changes (forward roll) above threshold
+            if orientation_change > 0.57:  # Approximately 30 degrees change in roll (sin(30°) ≈ 0.5)
+                imu_reward = orientation_change * 10.0  # Scale factor for reward magnitude
+            
+            self.prev_imu_grav = current_imu_grav.copy()
+        else:
+            self.prev_imu_grav = self._get_IMU_gravity_vectors()
         
         # Weighting individual reward components
         velocity_reward *= 0.0
-        distance_reward *= 1.0 
+        distance_reward *= 10.0 
+        imu_reward *= 100.0
         penalties *= 0.0  #Making this 1 did eliminate the oscillations, which is good
 
-        reward = velocity_reward + distance_reward + penalties
+        reward = velocity_reward + distance_reward + penalties + imu_reward
         
         # # Calculate total forward distance reward
         # if hasattr(self, 'prev_pos') and self.prev_pos is not None:
@@ -314,7 +336,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         # Reward for reaching new maximum distances
         exploration_reward = 0.0
         if xy_distance_from_origin > self.max_distance_from_origin:
-            exploration_reward = (xy_distance_from_origin - self.max_distance_from_origin) * 10000.0
+            exploration_reward = (xy_distance_from_origin - self.max_distance_from_origin) * 1000.0
             self.max_distance_from_origin = xy_distance_from_origin
         
         # Base distance reward (encourages staying away from origin)
