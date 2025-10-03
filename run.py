@@ -305,11 +305,11 @@ def run_roll_sequence():
                                       sim.min_cable_length, sim.max_cable_length)
 
     # Save the video if we have frames
-    if all_frames:
-        sim.save_video(Path(output_dir, video_filename), frames=all_frames)
-        print(f"Rolling sequence simulation completed. Video saved as {video_filename}")
-    else:
-        print("No frames were captured. Check if visualization is enabled.")
+    # if all_frames:
+    #     sim.save_video(Path(output_dir, video_filename), frames=all_frames)
+    #     print(f"Rolling sequence simulation completed. Video saved as {video_filename}")
+    # else:
+    #     print("No frames were captured. Check if visualization is enabled.")
 
     # # Create plots
     # create_cable_analysis_plots(time_data, target_lengths_data, actual_lengths_data, 

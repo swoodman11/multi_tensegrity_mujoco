@@ -160,7 +160,7 @@ action_dataset = []
 
 obs, _ = env.reset()
 # Increased dataset size for better coverage and reduced overfit risk
-for _step in range(20000):  # Increased from 15000 for more diverse data
+for _step in range(1000):  # Increased from 15000 for more diverse data
     for action in roll_sequence:
         # Store the current observation and the expert action
         obs_dataset.append(obs.copy())  # Use .copy() to avoid reference issues
@@ -171,6 +171,9 @@ for _step in range(20000):  # Increased from 15000 for more diverse data
         
         if done:
             obs, _ = env.reset()
+
+    obs, _ = env.reset() # Reset at the end of each full gait cycle
+    # NOTE: not sure that this is properly resetting. should likely delete and redo.
 
 timing_breakdown['Dataset Generation'] = time.time() - start_time
 print(f"   Dataset generation completed in {timing_breakdown['Dataset Generation']:.2f} seconds")
@@ -213,7 +216,7 @@ model = PPO(
     # Improved hyperparameters for complex locomotion tasks
     learning_rate=3e-4,           # More aggressive learning rate
     n_steps=2048,                 # Larger rollout buffer for better data
-    batch_size=64,                # Efficient batch size
+    batch_size=32,                # Efficient batch size
     n_epochs=10,                  # More epochs per update
     gamma=0.995,                  # Higher discount for long-term rewards
     gae_lambda=0.95,              # Good GAE parameter for continuous control
@@ -250,8 +253,8 @@ print(f"   Pre-training setup completed in {timing_breakdown['Pre-training Setup
 print("\n6. Starting pre-training with expert demonstrations...")
 start_time = time.time()
 print("Pre-training policy network with expert demonstrations...")
-num_epochs = 150  # Reduced from 200 to prevent overfitting
-batch_size = 64   # Kept consistent with PPO batch_size
+num_epochs = 50  # Reduced from 200 to prevent overfitting
+batch_size = 32   # Kept consistent with PPO batch_size
 for epoch in range(num_epochs):
     # Create mini-batches
     indices = np.random.permutation(len(X))
@@ -307,7 +310,7 @@ print("\n8. Starting RL training...")
 start_time = time.time()
 print("Starting RL training...")
 # Reduced from 5M to prevent overtraining and allow for faster iteration
-model.learn(total_timesteps=2_000_000)
+model.learn(total_timesteps=100_000)
 timing_breakdown['RL Training'] = time.time() - start_time
 print(f"\n   RL training completed in {timing_breakdown['RL Training']:.2f} seconds")
 

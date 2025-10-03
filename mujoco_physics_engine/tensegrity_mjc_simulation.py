@@ -5,6 +5,7 @@ from PIL import Image
 
 import mujoco
 import numpy as np
+import scipy as sp
 
 from mujoco_physics_engine.cable_motor import DCMotor
 from mujoco_physics_engine.mujoco_simulation import AbstractMuJoCoSimulator
@@ -268,37 +269,195 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
 
         penalties = self.calculate_anti_exploit_penalties(robot_pos, controls) #0
 
-        # Reward changes in IMU orientation
-        # Reward changes in IMU orientation - encourage rotation in one direction
-        imu_reward = 0.0
-        if hasattr(self, 'prev_imu_grav'):
-            current_imu_grav = self._get_IMU_gravity_vectors()
-            # Calculate change in orientation (gravity vector change)
-            # Reshape to get individual IMU gravity vectors (assuming 6 IMUs x 3 components)
-            current_imu_gravs = current_imu_grav.reshape(6, 3)
-            prev_imu_gravs = self.prev_imu_grav.reshape(6, 3)
-            
-            # Focus on the X-component of the first IMU (t1_r01) for forward roll direction
-            current_gravity_x = current_imu_gravs[0, 0]
-            prev_gravity_x = prev_imu_gravs[0, 0]
-            orientation_change = current_gravity_x - prev_gravity_x  # Signed change to keep direction
-            
-            # Reward only positive changes (forward roll) above threshold
-            if orientation_change > 0.57:  # Approximately 30 degrees change in roll (sin(30°) ≈ 0.5)
-                imu_reward = orientation_change * 10.0  # Scale factor for reward magnitude
-            
-            self.prev_imu_grav = current_imu_grav.copy()
-        else:
-            self.prev_imu_grav = self._get_IMU_gravity_vectors()
-        
-        # Weighting individual reward components
-        velocity_reward *= 0.0
-        distance_reward *= 10.0 
-        imu_reward *= 100.0
-        penalties *= 0.0  #Making this 1 did eliminate the oscillations, which is good
 
-        reward = velocity_reward + distance_reward + penalties + imu_reward
+        # Notes with Jue 10/03/2025:
+        # Use IMU speed and maybe acceleration readings
+        # reward only axis of cylinder rotation. 
+        # penalize rotation of other two
+        # put the IMU readings in the observation
+        # try to plot average endpoint x,y,z over time
+        # look at weighting
+        # plot how the reward evolves during training, hopefully stored in the zip file.
+
+        # Old IMU Reward Term
+        # # Reward changes in IMU orientation
+        # # Reward changes in IMU orientation - encourage rotation in one direction
+        # imu_reward = 0.0
+        # if hasattr(self, 'prev_imu_grav'):
+        #     current_imu_grav = self._get_IMU_gravity_vectors()
+        #     # Calculate change in orientation (gravity vector change)
+        #     # Reshape to get individual IMU gravity vectors (assuming 6 IMUs x 3 components)
+        #     current_imu_gravs = current_imu_grav.reshape(6, 3)
+        #     prev_imu_gravs = self.prev_imu_grav.reshape(6, 3)
+            
+        #     # Focus on the X-component of the first IMU (t1_r01) for forward roll direction
+        #     current_gravity_x = current_imu_gravs[0, 0]
+        #     prev_gravity_x = prev_imu_gravs[0, 0]
+        #     orientation_change = current_gravity_x - prev_gravity_x  # Signed change to keep direction
+            
+        #     # Reward only positive changes (forward roll) above threshold
+        #     if orientation_change > 0.57:  # Approximately 30 degrees change in roll (sin(30°) ≈ 0.5)
+        #         imu_reward = orientation_change * 10.0  # Scale factor for reward magnitude
+            
+        #     self.prev_imu_grav = current_imu_grav.copy()
+        # else:
+        #     self.prev_imu_grav = self._get_IMU_gravity_vectors()
+
+        # Old IMU Reward Term
+        # # # Track cumulative roll for continuous rolling reward
+        # imu_reward = 0.0
+        # if hasattr(self, 'prev_imu_grav'):
+        #     current_imu_grav = self._get_IMU_gravity_vectors()
+        #     current_imu_gravs = current_imu_grav.reshape(6, 3)
+        #     prev_imu_gravs = self.prev_imu_grav.reshape(6, 3)
+            
+        #     # Calculate roll angle from gravity vector (atan2 gives signed angle)
+        #     current_roll = np.arctan2(current_imu_gravs[0, 1], current_imu_gravs[0, 2])  # Y/Z components
+        #     prev_roll = np.arctan2(prev_imu_gravs[0, 1], prev_imu_gravs[0, 2])
+            
+        #     # Handle angle wrapping around ±π
+        #     roll_change = current_roll - prev_roll
+        #     if roll_change > np.pi:
+        #         roll_change -= 2*np.pi
+        #     elif roll_change < -np.pi:
+        #         roll_change += 2*np.pi
+            
+        #     # Reward forward rolling (positive direction) with magnitude-based scaling
+        #     if roll_change > 0:
+        #         imu_reward = roll_change * 50.0  # Scale factor (radians to reward)
+        #         # Bonus for sustained rolling speed
+        #         if hasattr(self, 'roll_velocity'):
+        #             self.roll_velocity = 0.9 * self.roll_velocity + 0.1 * abs(roll_change)
+        #             if self.roll_velocity > 0.05:  # ~3 degrees/step sustained
+        #                 imu_reward *= 1.5
+        #         else:
+        #             self.roll_velocity = abs(roll_change)
+            
+        #     self.prev_imu_grav = current_imu_grav.copy()
+        # else:
+        #     self.prev_imu_grav = self._get_IMU_gravity_vectors()
+        #     self.roll_velocity = 0.0
         
+        # Old IMU Reward Term
+        # # Reward coordinated rolling across multiple IMUs
+        # imu_reward = 0.0
+        # if hasattr(self, 'prev_imu_grav'):
+        #     current_imu_grav = self._get_IMU_gravity_vectors()
+        #     current_imu_gravs = current_imu_grav.reshape(6, 3)
+        #     prev_imu_gravs = self.prev_imu_grav.reshape(6, 3)
+            
+        #     # Calculate orientation changes for multiple IMUs
+        #     orientation_changes = []
+        #     for i in range(min(3, current_imu_gravs.shape[0])):  # Use first 3 IMUs
+        #         # Magnitude of gravity vector change (more robust than single component)
+        #         grav_change = np.linalg.norm(current_imu_gravs[i] - prev_imu_gravs[i])
+        #         orientation_changes.append(grav_change)
+            
+        #     avg_change = np.mean(orientation_changes)
+        #     change_consistency = 1.0 - np.std(orientation_changes)  # Reward synchronized motion
+            
+        #     # Reward threshold lowered for realistic step-by-step rolling
+        #     if avg_change > 0.05:  # ~3 degree equivalent change
+        #         base_reward = avg_change * 20.0
+        #         coordination_bonus = max(0, change_consistency) * 10.0
+        #         imu_reward = base_reward + coordination_bonus
+                
+        #         # Additional bonus for forward direction (check center of mass motion)
+        #         robot_pos = self.sim.data.qpos[:3]  # Assuming first 3 are robot position
+        #         if hasattr(self, 'prev_robot_pos'):
+        #             forward_motion = robot_pos[0] - self.prev_robot_pos[0]  # X-direction
+        #             if forward_motion > 0:
+        #                 imu_reward *= 1.3  # Bonus for forward progress
+        #         self.prev_robot_pos = robot_pos.copy()
+            
+        #     self.prev_imu_grav = current_imu_grav.copy()
+        # else:
+        #     self.prev_imu_grav = self._get_IMU_gravity_vectors()
+        #     self.prev_robot_pos = self.sim.data.qpos[:3].copy()
+
+        # # Reward based on angular velocity patterns consistent with rolling
+        # imu_reward = 0.0
+        # if hasattr(self, 'prev_imu_grav') and hasattr(self, 'prev_prev_imu_grav'):
+        #     current_imu_grav = self._get_IMU_gravity_vectors()
+        #     current_imu_gravs = current_imu_grav.reshape(6, 3)
+        #     prev_imu_gravs = self.prev_imu_grav.reshape(6, 3)
+        #     prev_prev_imu_gravs = self.prev_prev_imu_grav.reshape(6, 3)
+            
+        #     # Estimate angular velocity from gravity vector changes
+        #     # Use first IMU for primary rolling axis detection
+        #     grav_vel = (current_imu_gravs[0] - prev_imu_gravs[0])
+        #     grav_accel = (current_imu_gravs[0] - 2*prev_imu_gravs[0] + prev_prev_imu_gravs[0])
+            
+        #     # Rolling motion should show periodic gravity changes
+        #     angular_speed = np.linalg.norm(grav_vel)
+        #     angular_smoothness = 1.0 / (1.0 + np.linalg.norm(grav_accel))  # Prefer smooth motion
+            
+        #     # Reward range for realistic rolling speeds
+        #     if 0.02 < angular_speed < 0.2:  # Between 1-11 degrees/step
+        #         speed_reward = angular_speed * 25.0
+        #         smoothness_reward = angular_smoothness * 15.0
+        #         imu_reward = speed_reward + smoothness_reward
+                
+        #         # Check for consistent rolling direction over time
+        #         if hasattr(self, 'rolling_direction_history'):
+        #             current_direction = np.sign(np.dot(grav_vel, [1, 0, 0]))  # X-axis preference
+        #             self.rolling_direction_history.append(current_direction)
+        #             if len(self.rolling_direction_history) > 10:
+        #                 self.rolling_direction_history.pop(0)
+                    
+        #             # Bonus for consistent rolling direction
+        #             direction_consistency = abs(np.mean(self.rolling_direction_history))
+        #             if direction_consistency > 0.6:  # 60% consistency
+        #                 imu_reward *= (1.0 + direction_consistency)
+        #         else:
+        #             self.rolling_direction_history = []
+            
+        #     # Update history
+        #     self.prev_prev_imu_grav = self.prev_imu_grav.copy()
+        #     self.prev_imu_grav = current_imu_grav.copy()
+        # else:
+        #     current_imu_grav = self._get_IMU_gravity_vectors()
+        #     if hasattr(self, 'prev_imu_grav'):
+        #         self.prev_prev_imu_grav = self.prev_imu_grav.copy()
+        #     else:
+        #         self.prev_prev_imu_grav = current_imu_grav.copy()
+        #     self.prev_imu_grav = current_imu_grav.copy()
+        #     self.rolling_direction_history = []
+
+
+        imu_x_rotation_reward = self._reward_x_axis_rotation()
+
+        imu_x_rotation_speed_reward = self._reward_x_axis_desired_rotation_speed(desired_speed=0.5)
+
+        # Weighting individual reward components
+        # velocity_reward *= 0.0
+        # distance_reward *= 0.0 
+        # imu_x_rotation_reward *= 10.0 #as 1 one roll
+        # imu_x_rotation_speed_reward *= 10.0 #as 10 one roll
+        # penalties *= 0.0  #Making this 1 did eliminate the oscillations, which is good
+
+        # reward = velocity_reward + distance_reward + penalties + imu_x_rotation_reward + imu_x_rotation_speed_reward
+        
+        # In your sim_step() method, replace the oscillating rewards:
+
+        # OLD - Promotes oscillations
+        # imu_x_rotation_reward = self._reward_x_axis_rotation()
+        # imu_x_rotation_speed_reward = self._reward_x_axis_desired_rotation_speed(desired_speed=0.5)
+
+
+        # NOTE: Hey Zac, i thought we weren't incentivizing actual rolling, so the jittering stopped but weird behaviour here
+        # NEW - Promotes actual rolling
+        cumulative_rotation_reward = self._reward_cumulative_x_axis_rotation()
+        consistent_direction_reward = self._reward_consistent_rolling_direction(window_size=15)
+        displacement_progress_reward = self._reward_angular_displacement_progress(target_rotations_per_episode=1)
+
+        # Weighting - adjust based on what works best
+        cumulative_rotation_reward *= 5.0      # Reward total rotation progress
+        consistent_direction_reward *= 3.0     # Reward consistent direction
+        displacement_progress_reward *= 10.0    # Reward actual angular displacement
+
+        reward = (velocity_reward + distance_reward + penalties + 
+          cumulative_rotation_reward + consistent_direction_reward + displacement_progress_reward)
         # # Calculate total forward distance reward
         # if hasattr(self, 'prev_pos') and self.prev_pos is not None:
         #     # Calculate displacement from initial state
@@ -321,6 +480,200 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         self.forward()
         debug_print(f"Tensegrity positions: {self.mjc_data.qpos}", "tensegrity_mjc_simulation.py", self.debug_enabled)
         return self.mjc_data.qpos[:3]  # Assuming the first three elements represent the robot's position
+
+    def _reward_x_axis_rotation(self):
+        """
+        Reward term that encourages rotation about the x-axis.
+        Returns higher reward for faster x-axis rotation across all IMUs.
+        """
+        imu_ang = self._get_IMU_angular_velocities()
+        
+        # Extract x-axis angular velocities (every 3rd element starting from index 0)
+        x_angular_vels = imu_ang[::3]  # [0, 3, 6, ...] - x components
+        
+        # Reward based on absolute x-axis angular velocity
+        # Use absolute value to reward rotation in either direction
+        x_rotation_reward = np.sum(np.abs(x_angular_vels))
+        
+        # Optional: Add scaling factor to tune reward magnitude
+        return x_rotation_reward
+    
+    def _reward_x_axis_desired_rotation_speed(self, desired_speed=1.0):
+        """
+        Reward term that encourages rotation about the x-axis at a desired speed.
+        Returns higher reward for x-axis rotation velocities closer to the desired speed.
+        """
+        imu_ang = self._get_IMU_angular_velocities()
+        
+        # Extract x-axis angular velocities (every 3rd element starting from index 0)
+        x_angular_vels = imu_ang[::3]
+        # Reward based on closeness to desired speed
+        speed_diff = np.abs(x_angular_vels - desired_speed)
+        x_rotation_reward = np.sum(np.maximum(0, 1.0 - speed_diff))  # Reward decreases with speed difference
+        return x_rotation_reward
+    
+    def _reward_cumulative_x_axis_rotation(self):
+        """
+        Reward term that encourages sustained rolling by tracking cumulative rotation.
+        Prevents oscillation rewards by only rewarding net rotational progress.
+        """
+        # Get current IMU orientations (quaternions or Euler angles)
+        current_orientations = self._get_IMU_orientations()  # You may need to implement this
+        
+        # Initialize rotation tracking if first call
+        if not hasattr(self, 'prev_x_rotations'):
+            self.prev_x_rotations = np.zeros(len(current_orientations) // 3)  # Assuming 3 values per IMU
+            self.cumulative_x_rotations = np.zeros(len(current_orientations) // 3)
+            return 0.0
+        
+        # Extract x-axis rotations (first component of each IMU's orientation)
+        current_x_rotations = current_orientations[::3]  # was {::3} [0, 3, 6, ...] - x components
+        
+        # Calculate rotation differences (handle angle wrapping)
+        rotation_diffs = []
+        for i, (curr, prev) in enumerate(zip(current_x_rotations, self.prev_x_rotations)):
+            # Handle angle wrapping (-π to π)
+            diff = curr - prev
+            if diff > np.pi:
+                diff -= 2 * np.pi
+            elif diff < -np.pi:
+                diff += 2 * np.pi
+            rotation_diffs.append(diff)
+        
+        rotation_diffs = np.array(rotation_diffs)
+        
+        # Update cumulative rotations
+        self.cumulative_x_rotations += rotation_diffs
+        
+        # Reward based on cumulative rotation magnitude
+        cumulative_reward = np.sum(np.abs(self.cumulative_x_rotations))
+        
+        # Update previous rotations for next call
+        self.prev_x_rotations = current_x_rotations.copy()
+        
+        return cumulative_reward
+    
+    def _reward_consistent_rolling_direction(self, window_size=10):
+        """
+        Reward term that encourages consistent rolling direction over time.
+        Penalizes direction changes that indicate oscillation rather than rolling.
+        """
+        imu_ang = self._get_IMU_angular_velocities()
+        x_angular_vels = imu_ang[::3]  # [0, 3, 6, ...] - x components
+        
+        # Initialize rolling direction history if needed
+        if not hasattr(self, 'rolling_direction_history'):
+            self.rolling_direction_history = []
+        
+        # Determine current rolling direction (positive/negative/stopped)
+        avg_x_velocity = np.mean(x_angular_vels)
+        if abs(avg_x_velocity) > 0.1:  # Threshold to avoid noise
+            current_direction = 1 if avg_x_velocity > 0 else -1
+        else:
+            current_direction = 0  # Not rolling
+        
+        # Add to history and maintain window size
+        self.rolling_direction_history.append(current_direction)
+        if len(self.rolling_direction_history) > window_size:
+            self.rolling_direction_history.pop(0)
+        
+        # Calculate consistency reward
+        if len(self.rolling_direction_history) >= window_size:
+            # Count direction changes (oscillations)
+            direction_changes = 0
+            for i in range(1, len(self.rolling_direction_history)):
+                if (self.rolling_direction_history[i] != 0 and 
+                    self.rolling_direction_history[i-1] != 0 and
+                    self.rolling_direction_history[i] != self.rolling_direction_history[i-1]):
+                    direction_changes += 1
+            
+            # Reward consistency (fewer direction changes)
+            consistency_reward = max(0, window_size - direction_changes * 2)
+            
+            # Bonus for sustained rolling in one direction
+            non_zero_directions = [d for d in self.rolling_direction_history if d != 0]
+            if len(non_zero_directions) >= window_size * 0.8:  # 80% of time spent rolling
+                if len(set(non_zero_directions)) == 1:  # All same direction
+                    consistency_reward += 10.0  # Sustained rolling bonus
+            
+            return consistency_reward
+        
+        return 0.0
+    
+    def _reward_angular_displacement_progress(self, target_rotations_per_episode=2):
+        """
+        Reward based on total angular displacement from start position.
+        Encourages actual rolling progress rather than oscillations.
+        """
+        # Get current robot orientation
+        robot_quat = self.mjc_data.qpos[3:7]  # Quaternion orientation
+        
+        # Initialize starting orientation if first call
+        if not hasattr(self, 'initial_orientation'):
+            self.initial_orientation = robot_quat.copy()
+            return 0.0
+        
+        # Calculate total rotation from initial orientation
+        # Convert quaternions to rotation matrices and compute angle difference
+        from scipy.spatial.transform import Rotation as R
+        
+        initial_rot = R.from_quat(self.initial_orientation)
+        current_rot = R.from_quat(robot_quat)
+        
+        # Calculate relative rotation
+        relative_rot = current_rot * initial_rot.inv()
+        
+        # Extract x-axis rotation component
+        euler_angles = relative_rot.as_euler('xyz')
+        x_rotation_progress = abs(euler_angles[0])  # 0 is X-axis rotation in radians
+        
+        # Reward based on progress toward target rotations
+        target_radians = target_rotations_per_episode * 2 * np.pi
+        progress_reward = min(x_rotation_progress / target_radians, 1.0) * 100  # Scale to 0-100
+        
+        return progress_reward
+    
+    def _get_IMU_orientations(self):
+        """
+        Get IMU orientation data from MuJoCo sensors.
+        Returns orientations for all IMU sensors in the simulation.
+        """
+        orientations = []
+        
+        # Following coding guidelines - verify against actual sensor names in XML
+        try:
+            # Attempt to get orientation data from IMU sensors
+            for i in range(6):  # Assuming 6 IMUs based on coding guidelines
+                try:
+                    # Try different sensor naming conventions
+                    sensor_names = [f"imu_{i}", f"angvel_{i}", f"orientation_{i}"]
+                    
+                    for sensor_name in sensor_names:
+                        try:
+                            orientation_data = self.mjc_data.sensor(sensor_name).data
+                            orientations.extend(orientation_data[:3])  # First 3 components
+                            break
+                        except:
+                            continue
+                    else:
+                        # If no sensor found, use body orientation
+                        if i < len(self.mjc_model.body_names):
+                            body_quat = self.mjc_data.body(i).xquat
+                            # Convert quaternion to Euler for x-component
+                            from scipy.spatial.transform import Rotation as R
+                            euler = R.from_quat(body_quat).as_euler('xyz')
+                            orientations.extend(euler)
+                except:
+                    # Fallback: use zeros if sensor access fails
+                    orientations.extend([0.0, 0.0, 0.0])
+        
+        except Exception as e:
+            debug_print(f"Warning: Could not get IMU orientations: {e}", 
+                    "tensegrity_mjc_simulation.py", self.debug_enabled)
+            # Fallback to angular velocities as proxy
+            return self._get_IMU_angular_velocities()
+        
+        return np.array(orientations)
 
     def calculate_omnidirectional_distance_reward(self, robot_pos):
         """Reward for exploring the XY plane in any direction"""
