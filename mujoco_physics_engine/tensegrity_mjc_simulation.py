@@ -354,19 +354,29 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         end_pts = np.vstack(end_pts)
         return end_pts
     
-    def render(self, mode='human', width=800, height=600):
+    def render(self, mode='human', width=None, height=None):
         """Render the simulation"""
         try:
             # Import here to avoid issues
             import mujoco
             
-            # Create renderer if it doesn't exist
-            if not hasattr(self, '_renderer'):
-                self._renderer = mujoco.Renderer(self.mjc_model, height, width)
-            
-            # Update scene and render
-            self._renderer.update_scene(self.mjc_data)
-            frame = self._renderer.render()
+            # Use parent class renderer if available, otherwise create one
+            if hasattr(self, 'renderer') and self.renderer is not None:
+                # Use the properly configured renderer from parent class
+                self.renderer.update_scene(self.mjc_data)
+                frame = self.renderer.render()
+            else:
+                # Fallback: create renderer if it doesn't exist
+                if not hasattr(self, '_renderer'):
+                    # Use provided dimensions or defaults
+                    if width is None or height is None:
+                        width = 800
+                        height = 600
+                    self._renderer = mujoco.Renderer(self.mjc_model, height, width)
+                
+                # Update scene and render
+                self._renderer.update_scene(self.mjc_data)
+                frame = self._renderer.render()
             
             if mode == 'human':
                 import cv2

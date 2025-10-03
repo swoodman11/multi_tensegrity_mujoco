@@ -42,6 +42,7 @@ import re
 from datetime import datetime
 import numpy as np
 import matplotlib.pyplot as plt
+from pathlib import Path
 
 def find_most_recent_model(models_dir="trained_models", pattern="*_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9][0-9][0-9][0-9][0-9][0-9].zip"):
     """Find the most recent trained model based on timestamp in filename.
@@ -376,6 +377,8 @@ parser.add_argument("--no-vis", action="store_true",
                    help="Disable visualization")
 parser.add_argument("--save-plots", action="store_true", 
                    help="Save observation and analysis plots as PNG files (disabled by default)")
+parser.add_argument("--save-video", action="store_true", 
+                   help="Save simulation as video file (disabled by default)")
 args = parser.parse_args()
 
 # Determine which model to load
@@ -396,26 +399,20 @@ print("Testing trained model with visualization..." if not args.no_vis else "Tes
 if not args.no_vis:
     print("Press 'q' in the render window to quit early")
 
-# --- Video recording setup (replaces the former 'save' line) ---
-import imageio
-
-VIDEO_PATH = "simulation.mp4"
-VIDEO_FPS = 30
-VIDEO_SIZE = (1280, 720)  # (width, height)
-
-# Assumes 'model' and 'data' already exist above (created via mujoco.MjModel / mjcf / load).
-# renderer = mujoco.Renderer(model, width=VIDEO_SIZE[0], height=VIDEO_SIZE[1])
-# writer = imageio.get_writer(
-#     VIDEO_PATH,
-#     fps=VIDEO_FPS,
-#     codec="libx264",
-#     quality=8,
-#     pixelformat="yuv420p"  # broad player compatibility
-# )
-
-# Flag to enable/disable recording (set to False to skip)
-RECORD_VIDEO = True
-# --- End video recording setup ---
+# --- Video saving setup ---
+video_frames = []
+if args.save_video:
+    print("Video saving enabled - frames will be collected during simulation")
+    # Create output directory
+    output_dir = Path('sim_output')
+    output_dir.mkdir(exist_ok=True)
+    # Generate timestamped filename
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    video_filename = f"test_model_{timestamp}.mp4"
+    video_path = output_dir / video_filename
+else:
+    print("Video saving disabled")
+# --- End video saving setup ---
 
 # Test for 1 episode with rendering
 obs, info = env.reset()
@@ -437,7 +434,7 @@ print(f"Observation mode: {env.sim.obs_mode}")
 
 print(f"\n=== Visualizing Robot Gait ===")
 
-for step in range(5000):  # Max steps per episode
+for step in range(500):  # Max steps per episode
     # mujoco.mj_step(model, data)
     action, _ = model.predict(obs, deterministic=True)
     # Ensure action shape is (num_actuators,)
@@ -465,6 +462,12 @@ for step in range(5000):  # Max steps per episode
         env.render()
         time.sleep(0.0005)  # Slow down for better viewing
     
+    # Collect frames for video saving (if enabled)
+    if args.save_video:
+        # Force rendering to get frames even if visualization is disabled
+        frame = env.sim.render()
+        video_frames.append(frame)
+    
     # Print progress every 50 steps
     if step % 50 == 0:
         print(f"Step {step}: Reward = {reward:.3f}, Total = {total_reward:.2f}")
@@ -473,21 +476,19 @@ for step in range(5000):  # Max steps per episode
         print("Episode ended!")
         break
 
-    # if RECORD_VIDEO:
-    #     renderer.update_scene(data)
-    #     frame = renderer.render()
-    #     writer.append_data(frame)
-
 print(f"Final: {steps} steps, Total reward: {total_reward:.2f}")
 
 # Keep window open for a bit (only if visualization is enabled)
 if not args.no_vis:
     time.sleep(2)
 
-# After the simulation loop (ensure this runs even if loop breaks early):
-# if RECORD_VIDEO:
-#     writer.close()
-#     print(f"Saved MuJoCo video to {VIDEO_PATH}")
+# Save video if enabled and frames were collected
+if args.save_video and video_frames:
+    print(f"Saving video with {len(video_frames)} frames...")
+    env.sim.save_video(video_path, video_frames)
+    print(f"Video saved to: {video_path}")
+elif args.save_video:
+    print("Warning: Video saving was enabled but no frames were collected")
 
 # ----- Post-run: Save plots and CSVs -----
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

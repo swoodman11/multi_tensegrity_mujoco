@@ -56,15 +56,86 @@ class AbstractMuJoCoSimulator:
         return frame
 
     def save_video(self, save_path: Path, frames: list):
-        frame_size = (self.renderer.width, self.renderer.height)
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        video_writer = cv2.VideoWriter(save_path.as_posix(), fourcc, self.render_fps, frame_size)
-
+        if not frames:
+            print("Warning: No frames to save")
+            return
+        
+        # Get frame size from the actual frame dimensions, not renderer settings
+        if frames:
+            actual_frame = frames[0]
+            if len(actual_frame.shape) == 3:
+                frame_height, frame_width = actual_frame.shape[:2]
+                frame_size = (frame_width, frame_height)
+            else:
+                print("Error: Invalid frame dimensions")
+                return
+        else:
+            # Fallback to renderer size if available
+            if hasattr(self, 'renderer') and self.renderer is not None:
+                frame_size = (self.renderer.width, self.renderer.height)
+            else:
+                print("Error: Cannot determine frame size")
+                return
+        
+        print(f"Detected frame size: {frame_size}")
+        
+        # Try multiple codecs in order of preference
+        codecs_to_try = [
+            cv2.VideoWriter_fourcc(*'mp4v'),  # MPEG-4 Part 2
+            cv2.VideoWriter_fourcc(*'XVID'),  # Xvid
+            cv2.VideoWriter_fourcc(*'MJPG'),  # Motion JPEG
+        ]
+        
+        video_writer = None
+        for fourcc in codecs_to_try:
+            try:
+                # Use string path instead of .as_posix() for better Windows compatibility
+                video_writer = cv2.VideoWriter(str(save_path), fourcc, self.render_fps, frame_size)
+                
+                # Test if the video writer was initialized successfully
+                if video_writer.isOpened():
+                    break
+                else:
+                    video_writer.release()
+                    video_writer = None
+            except Exception as e:
+                print(f"Failed to initialize video writer with codec: {e}")
+                if video_writer:
+                    video_writer.release()
+                video_writer = None
+        
+        if video_writer is None:
+            print("Error: Could not initialize video writer with any codec")
+            return
+        
+        print(f"Saving video with {len(frames)} frames to {save_path}")
+        
+        successful_writes = 0
         for i, frame in enumerate(frames):
-            im = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-            video_writer.write(im)
-
+            try:
+                # Ensure frame is in correct format
+                if frame.dtype != np.uint8:
+                    frame = (frame * 255).astype(np.uint8)
+                
+                # Convert RGB to BGR for OpenCV
+                im = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                
+                # Frame should already be the right size now, but double-check
+                if im.shape[:2] != (frame_size[1], frame_size[0]):  # Note: OpenCV uses (height, width)
+                    print(f"Warning: Frame {i} size mismatch, resizing")
+                    im = cv2.resize(im, frame_size)
+                
+                success = video_writer.write(im)
+                if success:
+                    successful_writes += 1
+                elif success is False:  # Explicitly check for False (not None)
+                    print(f"Warning: Failed to write frame {i}")
+                    
+            except Exception as e:
+                print(f"Error writing frame {i}: {e}")
+        
         video_writer.release()
+        print(f"Video saved successfully to {save_path} ({successful_writes}/{len(frames)} frames written)")
 
 
 if __name__ == '__main__':

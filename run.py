@@ -138,7 +138,7 @@ def run_roll_sequence():
     #     [1.0, 1.0, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
     # ])
     
-    n = 5  # Number of times to repeat the sequence
+    n = 1  # Number of times to repeat the sequence
     roll_sequence = np.tile(base_sequence, (n, 1))
     
     # Create output directory
@@ -303,6 +303,13 @@ def run_roll_sequence():
                                       pid_responses_data, reward_data, test_reward_data, reward_components_data,
                                       sequence_boundaries, output_dir, timestamp,
                                       sim.min_cable_length, sim.max_cable_length)
+
+    # Save the video if we have frames
+    if all_frames:
+        sim.save_video(Path(output_dir, video_filename), frames=all_frames)
+        print(f"Rolling sequence simulation completed. Video saved as {video_filename}")
+    else:
+        print("No frames were captured. Check if visualization is enabled.")
 
     # # Create plots
     # create_cable_analysis_plots(time_data, target_lengths_data, actual_lengths_data, 
@@ -842,11 +849,11 @@ def create_individual_actuator_plots(time_data, target_lengths_data, actual_leng
                                pid_responses_data, sequence_boundaries, output_dir, timestamp)
     
     # Save the video if we have frames
-    # if all_frames:
-    #     sim.save_video(Path(output_dir, video_filename), frames=all_frames)
-    #     print(f"Rolling sequence simulation completed. Video saved as {video_filename}")
-    # else:
-    #     print("No frames were captured. Check if visualization is enabled.")
+    if all_frames:
+        sim.save_video(Path(output_dir, video_filename), frames=all_frames)
+        print(f"Rolling sequence simulation completed. Video saved as {video_filename}")
+    else:
+        print("No frames were captured. Check if visualization is enabled.")
 
 
 def run_multi_sim():
