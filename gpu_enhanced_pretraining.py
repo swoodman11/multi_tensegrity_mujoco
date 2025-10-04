@@ -47,7 +47,7 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, gpu_id=0):
         
         # CRITICAL: Verify obs_dim consistency per coding guidelines
         env = TensegrityEnv(visualize=False)  # No visualization for GPU training
-        expected_obs_dim = 78  # From coding guidelines
+        expected_obs_dim = 96  # From coding guidelines
         actual_obs_dim = env.observation_space.shape[0]
         
         if actual_obs_dim != expected_obs_dim:

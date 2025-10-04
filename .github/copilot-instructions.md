@@ -33,7 +33,7 @@ This is a MuJoCo-based physics simulation for tensegrity robots with reinforceme
 The project uses a sophisticated cable-driven tensegrity control system:
 - **12 actuated cables** per robot (6 per tensegrity structure in dual-robot setup)
 - **PID controllers** (`mujoco_physics_engine/pid.py`) for cable length control with normalized target lengths (0.0 to 1.0)
-- **DC motor models** (`mujoco_physics_engine/cable_motor.py`) with winch radius 0.035m and max speed 220 RPM
+- **DC motor models** (`mujoco_physics_engine/cable_motor.py`) with winch radius 0.0035m (code value 0.035 with 10x scaling) and max speed 220 RPM
 - **Cable naming convention**: `t1_s_X_bY` format where t1/t2 = robot, X/Y = attachment points
 
 ## Development Workflows
@@ -49,19 +49,22 @@ pip install -r requirements.txt
 
 - **Run simulation**: `python run.py` (generates visualization frames in `sim_output/`)
 - **Train RL model**: `python train.py` (creates PPO model, logs to `ppo_tensegrity_tensorboard/`)
+- **Pretraining with gaits**: `python pretraining.py` (pretraining with specific gait patterns)
+- **GPU pretraining**: `python gpu_pretraining.py` (GPU-optimized pretraining)
+- **GPU enhanced pretraining**: `python gpu_enhanced_pretraining.py` (advanced GPU pretraining)
 - **Test trained model**: `python test_trained_model.py` (loads saved model for evaluation)
 - **Test MuJoCo setup**: `python test_mujoco_simulator.py` (basic MuJoCo viewer test)
 
 ## XML Model Configuration
 
 - Models located in `mujoco_physics_engine/xml_models/`
-- Two configurations: `two_3bar_new_platform_config_1.xml` and `config_2.xml`
+- Two configurations: `two_3bar_new_platform_config_1.xml` and `two_3bar_new_platform_config_2.xml`
 - Each represents dual 3-bar tensegrity robots connected by platform
 
 ## RL Integration Patterns
 
 ### Observation Space
-- **Default dimension**: 78 (configurable via `obs_dim` parameter in TensegrityMuJoCoSimulator)
+- **Default dimension**: 96 (configurable via `obs_dim` parameter in TensegrityMuJoCoSimulator)
 - **CRITICAL**: Verify obs_dim consistency between TensegrityEnv (tensegrity_env.py) and TensegrityMuJoCoSimulator 
 - **Type**: Box space with infinite bounds
 - Includes robot state vectors from MuJoCo simulation
@@ -81,8 +84,8 @@ Implemented in `sim_step()` method of `TensegrityMuJoCoSimulator` - examine this
 ```python
 # Always specify xml_path as Path object
 xml = Path('mujoco_physics_engine/xml_models/two_3bar_new_platform_config_1.xml')
-# Default obs_dim=78, verify this matches your environment setup
-sim = TensegrityMuJoCoSimulator(xml, visualize=True, obs_dim=78)
+# Default obs_dim=96, verify this matches your environment setup
+sim = TensegrityMuJoCoSimulator(xml, visualize=True, obs_dim=96)
 ```
 
 ### Cable Control

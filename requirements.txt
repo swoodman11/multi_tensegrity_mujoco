@@ -7,3 +7,6 @@ stable-baselines3
 gymnasium
 tensorboard
 matplotlib
+torch
+scipy
+psutil
