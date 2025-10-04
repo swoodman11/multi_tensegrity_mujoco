@@ -310,7 +310,7 @@ print("\n8. Starting RL training...")
 start_time = time.time()
 print("Starting RL training...")
 # Reduced from 5M to prevent overtraining and allow for faster iteration
-model.learn(total_timesteps=100_000)
+model.learn(total_timesteps=4_000_000)
 timing_breakdown['RL Training'] = time.time() - start_time
 print(f"\n   RL training completed in {timing_breakdown['RL Training']:.2f} seconds")
 
