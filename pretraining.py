@@ -467,5 +467,65 @@ def main():
         gc.collect()
         print("🧹 Cleanup completed")
 
-if __name__ == "__main__":
-    main()
+    timing_breakdown['Pre-training'] = time.time() - start_time
+    print(f"\n   Pre-training completed in {timing_breakdown['Pre-training']:.2f} seconds")
+
+    print("\n7. Saving pre-trained model...")
+    start_time = time.time()
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    model.save(f"trained_models/tensegrity_gait_seeded_before_RL_{timestamp}")
+    timing_breakdown['Model Save (Pre-trained)'] = time.time() - start_time
+    print(f"   Pre-trained model saved in {timing_breakdown['Model Save (Pre-trained)']:.2f} seconds")
+
+    # Now continue with regular RL training
+    print("\n8. Starting RL training...")
+    start_time = time.time()
+    print("Starting RL training...")
+    # Reduced from 5M to prevent overtraining and allow for faster iteration
+    model.learn(total_timesteps=4_000_000)
+    timing_breakdown['RL Training'] = time.time() - start_time
+    print(f"\n   RL training completed in {timing_breakdown['RL Training']:.2f} seconds")
+
+    # Save the model with a timestamp to prevent overwriting files
+    print("\n9. Saving final trained model...")
+    start_time = time.time()
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    model.save(f"trained_models/ppo_tensegrity_gait_seeded_{timestamp}")
+    timing_breakdown['Model Save (Final)'] = time.time() - start_time
+    print(f"Model saved as: ppo_tensegrity_gait_seeded_{timestamp}.zip")
+    print(f"   Final model saved in {timing_breakdown['Model Save (Final)']:.2f} seconds")
+
+    # Calculate total time and print comprehensive breakdown
+    total_time = time.time() - start_time_total
+    timing_breakdown['Total Time'] = total_time
+
+    print("\n" + "="*60)
+    print("           TRAINING TIMING BREAKDOWN")
+    print("="*60)
+    print(f"End time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print()
+
+    # Print timing breakdown
+    for component, duration in timing_breakdown.items():
+        if component != 'Total Time':
+            percentage = (duration / total_time) * 100
+            print(f"{component:<25}: {duration:>8.2f}s ({percentage:>5.1f}%)")
+
+    print("-" * 60)
+    print(f"{'TOTAL TIME':<25}: {total_time:>8.2f}s (100.0%)")
+    print("-" * 60)
+
+    # Convert to hours, minutes, seconds for readability
+    hours = int(total_time // 3600)
+    minutes = int((total_time % 3600) // 60)
+    seconds = int(total_time % 60)
+
+    if hours > 0:
+        time_str = f"{hours}h {minutes}m {seconds}s"
+    elif minutes > 0:
+        time_str = f"{minutes}m {seconds}s"
+    else:
+        time_str = f"{seconds}s"
+
+    print(f"\nTotal training time: {time_str}")
+    print("="*60)

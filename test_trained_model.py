@@ -434,7 +434,7 @@ print(f"Observation mode: {env.sim.obs_mode}")
 
 print(f"\n=== Visualizing Robot Gait ===")
 
-for step in range(1000):  # Max steps per episode
+for step in range(10000):  # Max steps per episode
     # mujoco.mj_step(model, data)
     action, _ = model.predict(obs, deterministic=True)
     # Ensure action shape is (num_actuators,)

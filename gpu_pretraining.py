@@ -106,6 +106,10 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
         
         # Your exact roll_sequence from pretraining.py
         roll_sequence = np.array([
+            [0.5, 0.5, 0.5, 0.5, 0.5, 0.5,   0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+            [0.5, 0.5, 0.5, 0.5, 0.5, 0.5,   0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+            [0.5, 0.5, 0.5, 0.5, 0.5, 0.5,   0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+            [0.5, 0.5, 0.5, 0.5, 0.5, 0.5,   0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
             [1.0, 1.0, 0.1, 1.0, 1.0, 0.1,   0.1, 0.8, 0.0, 1.0, 1.0, 0.0],
             [0.0, 1.0, 1.0, 0.0, 0.8, 0.1,   1.0, 0.1, 1.0, 1.0, 0.1, 1.0],
             [1.0, 0.1, 1.0, 1.0, 0.1, 1.0,   0.0, 0.1, 0.8, 0.0, 1.0, 1.0],
@@ -140,7 +144,7 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
             if "rtx5090" in config_name:
                 num_cycles = 2000
             elif "rtx4090" in config_name:
-                num_cycles = 1000
+                num_cycles = 100 #1000
             elif "rtx2080ti_32gb" in config_name:
                 num_cycles = 300
             else:
@@ -332,8 +336,8 @@ def gpu_optimized_configs():
             "n_epochs": 15,         # More epochs with GPU speed, might overfit
             "gamma": 0.995,
             "gae_lambda": 0.95,
-            "clip_range": 0.2,
-            "ent_coef": 0.05, # was 0.01, promotes exploration
+            "clip_range": 0.5,
+            "ent_coef": 0.5, # was 0.01, promotes exploration
             "vf_coef": 1.0,
             "max_grad_norm": 0.5,
             "policy_kwargs": dict(
@@ -348,8 +352,8 @@ def gpu_optimized_configs():
             "n_epochs": 5,         # Fewer epochs to prevent overfitting
             "gamma": 0.999,         # Long-term focus
             "gae_lambda": 0.95,
-            "clip_range": 0.2,
-            "ent_coef": 0.05,      # was 0.01, promotes exploration
+            "clip_range": 0.5,
+            "ent_coef": 0.5,      # was 0.01, promotes exploration
             "vf_coef": 1.0,
             "max_grad_norm": 0.5,
             "policy_kwargs": dict(
@@ -448,7 +452,7 @@ def main():
     elif "4090" in gpu_name:
         selected_configs = {k: v for k, v in configs.items() if "rtx4090" in k}
         timesteps = 100000  # Standard for RTX 4090
-        cycles = 1000       # Large demonstration cycles
+        cycles = 15       # Large demonstration cycles
         print(f"🚀 RTX 4090 detected! Using optimized configurations for {gpu_memory_gb:.1f}GB VRAM")
         
     elif "2080" in gpu_name and system_ram_gb >= 24:
@@ -461,7 +465,7 @@ def main():
         # Default to RTX 4090 large as requested
         selected_configs = {"rtx4090_large": configs["rtx4090_large"]}
         timesteps = 100000
-        cycles = 1000
+        cycles = 15 #was 1000
         print(f"⚠️  Unknown/unsupported GPU '{gpu_name}' ({gpu_memory_gb:.1f}GB)")
         print(f"    Defaulting to RTX 4090 Large configuration as requested")
         print(f"    WARNING: This may cause GPU OOM if your hardware has insufficient VRAM")

@@ -456,7 +456,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         consistent_direction_reward *= 3.0     # Reward consistent direction
         displacement_progress_reward *= 10.0    # Reward actual angular displacement
 
-        reward = (velocity_reward + distance_reward + penalties + 
+        reward = (velocity_reward + distance_reward + penalties*10.0 + 
           cumulative_rotation_reward + consistent_direction_reward + displacement_progress_reward)
         # # Calculate total forward distance reward
         # if hasattr(self, 'prev_pos') and self.prev_pos is not None:
@@ -772,10 +772,10 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         penalties = 0.0
         
         # 1. Prevent excessive bouncing (z-axis exploitation)
-        # if hasattr(self, 'prev_pos') and self.prev_pos is not None:
-        #     z_velocity = abs((robot_pos[2] - self.prev_pos[2]) / self.dt)
-        #     if z_velocity > 1.0:  # Too much vertical movement
-        #         penalties -= z_velocity * 5.0
+        if hasattr(self, 'prev_pos') and self.prev_pos is not None:
+            z_velocity = abs((robot_pos[2] - self.prev_pos[2]) / self.dt)
+            if z_velocity > 1.0:  # Too much vertical movement
+                penalties -= z_velocity * 5.0
         
         # 2. Prevent rapid oscillations in controls
         if hasattr(self, 'prev_controls'):
