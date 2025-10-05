@@ -5,6 +5,257 @@ import matplotlib.pyplot as plt
 from mujoco_physics_engine.tensegrity_mjc_simulation import *
 
 
+def visualize_reward_components():
+    """
+    Visualize how different motion patterns affect each reward component.
+    This helps debug and understand the reward function behavior.
+    """
+    print("🎯 REWARD COMPONENT VISUALIZATION")
+    print("=" * 60)
+    
+    # Create output directory
+    output_dir = Path('sim_output')
+    output_dir.mkdir(exist_ok=True)
+    
+    # Load simulator with visualization
+    xml = Path('mujoco_physics_engine/xml_models/two_3bar_new_platform_config_1.xml')
+    sim = TensegrityMuJoCoSimulator(xml, visualize=True, controller_kp=10.0, controller_ki=0.2, controller_kd=2.0)
+    
+    # Define test scenarios with different motion patterns
+    test_scenarios = {
+        "1. Good Rolling Pattern": {
+            "sequence": np.array([
+                [1.0, 1.0, 0.1, 1.0, 1.0, 0.1, 0.1, 0.8, 0.0, 1.0, 1.0, 0.0],  # Roll sequence step 1
+                [0.0, 1.0, 1.0, 0.0, 0.8, 0.1, 1.0, 0.1, 1.0, 1.0, 0.1, 1.0],  # Roll sequence step 2
+                [1.0, 0.1, 1.0, 1.0, 0.1, 1.0, 0.0, 0.1, 0.8, 0.0, 1.0, 1.0],  # Roll sequence step 3
+            ]),
+            "description": "Known good rolling sequence that should complete rolling motion"
+        },
+        
+        "2. Full Contraction (EXPLOIT)": {
+            "sequence": np.array([
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],  # All cables fully contracted
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            ]),
+            "description": "Full contraction exploit - should be heavily penalized"
+        },
+        
+        "3. High Oscillation (EXPLOIT)": {
+            "sequence": np.array([
+                [1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0],  # Rapid alternating
+                [0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0],  # Pattern changes
+                [1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0],
+            ]),
+            "description": "High oscillation pattern that might cause sliding"
+        },
+        
+        "4. Balanced Extension": {
+            "sequence": np.array([
+                [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],  # All moderate
+                [0.6, 0.7, 0.5, 0.8, 0.6, 0.7, 0.5, 0.8, 0.6, 0.7, 0.5, 0.8],  # Slight variations
+                [0.7, 0.6, 0.8, 0.5, 0.7, 0.6, 0.8, 0.5, 0.7, 0.6, 0.8, 0.5],
+            ]),
+            "description": "Moderate, balanced cable extensions - baseline comparison"
+        }
+    }
+    
+    # Data collection for plotting
+    all_results = {}
+    
+    for scenario_name, scenario_data in test_scenarios.items():
+        print(f"\n🔄 Testing: {scenario_name}")
+        print(f"   {scenario_data['description']}")
+        
+        # Reset simulation
+        sim.reset()
+        sim.bring_to_grnd()
+        
+        # Initialize tracking variables
+        results = {
+            'step': [],
+            'total_reward': [],
+            'rolling_quality': [],
+            'exploitation_penalties': [],
+            'cumulative_rotation': [],
+            'consistent_direction': [],
+            'distance_reward': [],
+            'position_x': [],
+            'position_y': [],
+            'position_z': []
+        }
+        
+        sequence = scenario_data['sequence']
+        
+        # Run through the sequence
+        for step_idx, target_lengths in enumerate(sequence):
+            print(f"     Step {step_idx + 1}: Running target lengths...")
+            
+            # Run simulation step and capture detailed reward breakdown
+            for sub_step in range(20):  # Run each pattern for 20 simulation steps
+                observation, reward, done, info = sim.sim_step(target_lengths)
+                
+                # Get robot position
+                end_pts = sim.get_endpts()
+                robot_pos = end_pts.mean(axis=0)
+                
+                # Calculate individual reward components manually for visualization
+                controls = np.array(target_lengths)
+                
+                # Calculate each reward component separately
+                rolling_quality = sim.calculate_rolling_quality_reward(robot_pos)
+                exploitation_penalties = sim.calculate_anti_exploit_penalties(robot_pos, controls)
+                cumulative_rotation = sim._reward_cumulative_x_axis_rotation() * 2.0
+                consistent_direction = sim._reward_consistent_rolling_direction(window_size=15) * 1.5
+                distance_reward = sim.calculate_omnidirectional_distance_reward(robot_pos) * 0.3
+                
+                # Store results
+                current_step = step_idx * 20 + sub_step
+                results['step'].append(current_step)
+                results['total_reward'].append(reward)
+                results['rolling_quality'].append(rolling_quality)
+                results['exploitation_penalties'].append(exploitation_penalties)
+                results['cumulative_rotation'].append(cumulative_rotation)
+                results['consistent_direction'].append(consistent_direction)
+                results['distance_reward'].append(distance_reward)
+                results['position_x'].append(robot_pos[0])
+                results['position_y'].append(robot_pos[1])
+                results['position_z'].append(robot_pos[2])
+        
+        # Calculate summary statistics
+        avg_total_reward = np.mean(results['total_reward'])
+        avg_rolling_quality = np.mean(results['rolling_quality'])
+        avg_exploitation_penalties = np.mean(results['exploitation_penalties'])
+        total_x_displacement = results['position_x'][-1] - results['position_x'][0]
+        
+        print(f"     Results:")
+        print(f"       Average Total Reward: {avg_total_reward:.3f}")
+        print(f"       Average Rolling Quality: {avg_rolling_quality:.3f}")
+        print(f"       Average Exploitation Penalties: {avg_exploitation_penalties:.3f}")
+        print(f"       Total X Displacement: {total_x_displacement:.3f}")
+        
+        all_results[scenario_name] = results
+    
+    # Create comprehensive visualization plots
+    print(f"\n📊 Creating reward component visualization plots...")
+    
+    fig, axes = plt.subplots(3, 2, figsize=(15, 12))
+    fig.suptitle('Reward Component Analysis for Different Motion Patterns', fontsize=16)
+    
+    colors = ['green', 'red', 'orange', 'blue']
+    
+    # Plot 1: Total Reward Over Time
+    ax = axes[0, 0]
+    for i, (scenario_name, results) in enumerate(all_results.items()):
+        ax.plot(results['step'], results['total_reward'], label=scenario_name.split('.')[1].strip(), 
+                color=colors[i % len(colors)], linewidth=2)
+    ax.set_title('Total Reward Over Time')
+    ax.set_xlabel('Simulation Step')
+    ax.set_ylabel('Total Reward')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    
+    # Plot 2: Rolling Quality Component
+    ax = axes[0, 1]
+    for i, (scenario_name, results) in enumerate(all_results.items()):
+        ax.plot(results['step'], results['rolling_quality'], label=scenario_name.split('.')[1].strip(),
+                color=colors[i % len(colors)], linewidth=2)
+    ax.set_title('Rolling Quality Reward')
+    ax.set_xlabel('Simulation Step')
+    ax.set_ylabel('Rolling Quality')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    
+    # Plot 3: Exploitation Penalties
+    ax = axes[1, 0]
+    for i, (scenario_name, results) in enumerate(all_results.items()):
+        ax.plot(results['step'], results['exploitation_penalties'], label=scenario_name.split('.')[1].strip(),
+                color=colors[i % len(colors)], linewidth=2)
+    ax.set_title('Anti-Exploitation Penalties')
+    ax.set_xlabel('Simulation Step')
+    ax.set_ylabel('Penalties (negative)')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    
+    # Plot 4: Position Trajectory (X displacement)
+    ax = axes[1, 1]
+    for i, (scenario_name, results) in enumerate(all_results.items()):
+        ax.plot(results['step'], results['position_x'], label=scenario_name.split('.')[1].strip(),
+                color=colors[i % len(colors)], linewidth=2)
+    ax.set_title('Forward Progress (X Position)')
+    ax.set_xlabel('Simulation Step')
+    ax.set_ylabel('X Position')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    
+    # Plot 5: Cumulative Rotation Reward
+    ax = axes[2, 0]
+    for i, (scenario_name, results) in enumerate(all_results.items()):
+        ax.plot(results['step'], results['cumulative_rotation'], label=scenario_name.split('.')[1].strip(),
+                color=colors[i % len(colors)], linewidth=2)
+    ax.set_title('Cumulative Rotation Reward')
+    ax.set_xlabel('Simulation Step')
+    ax.set_ylabel('Rotation Reward')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    
+    # Plot 6: Summary Bar Chart
+    ax = axes[2, 1]
+    scenario_names = [name.split('.')[1].strip() for name in all_results.keys()]
+    avg_rewards = [np.mean(results['total_reward']) for results in all_results.values()]
+    bars = ax.bar(scenario_names, avg_rewards, color=colors[:len(scenario_names)])
+    ax.set_title('Average Total Reward by Scenario')
+    ax.set_ylabel('Average Reward')
+    ax.tick_params(axis='x', rotation=45)
+    
+    # Color bars based on reward value
+    for bar, reward in zip(bars, avg_rewards):
+        if reward > 0:
+            bar.set_color('green')
+        elif reward < -10:
+            bar.set_color('red')
+        else:
+            bar.set_color('orange')
+    
+    plt.tight_layout()
+    
+    # Save the plot
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    plot_filename = output_dir / f"reward_analysis_{timestamp}.png"
+    plt.savefig(plot_filename, dpi=300, bbox_inches='tight')
+    print(f"📈 Reward analysis plot saved to: {plot_filename}")
+    
+    # Show plot
+    plt.show()
+    
+    # Print final analysis
+    print(f"\n🎯 REWARD SYSTEM ANALYSIS SUMMARY:")
+    print("=" * 60)
+    
+    for scenario_name, results in all_results.items():
+        avg_reward = np.mean(results['total_reward'])
+        avg_rolling_quality = np.mean(results['rolling_quality'])
+        avg_penalties = np.mean(results['exploitation_penalties'])
+        final_x_pos = results['position_x'][-1] - results['position_x'][0]
+        
+        status = "✅ GOOD" if avg_reward > 0 else "❌ PENALIZED" if avg_reward < -10 else "⚠️  NEUTRAL"
+        
+        print(f"{scenario_name}:")
+        print(f"  Average Reward: {avg_reward:8.3f} | {status}")
+        print(f"  Rolling Quality: {avg_rolling_quality:7.3f}")
+        print(f"  Penalties: {avg_penalties:12.3f}")
+        print(f"  X Displacement: {final_x_pos:8.3f}")
+        print()
+    
+    print("🔍 What to look for:")
+    print("✅ Good Rolling Pattern should have positive rewards and forward progress")
+    print("❌ Full Contraction should be heavily penalized (< -20)")
+    print("❌ High Oscillation should be penalized for rapid control changes")
+    print("⚠️  Balanced Extension should be neutral baseline")
+    
+    return all_results
+
+
 def run_single_sim():
     output_dir = Path('sim_output')
     output_dir.mkdir(exist_ok=True)
@@ -871,6 +1122,11 @@ def run_multi_sim():
 
 if __name__ == "__main__":
     # Uncomment the function you want to run
+    
+    # Original simulation functions
     # run_single_sim()
-    run_roll_sequence()
+    # run_roll_sequence()
     # run_multi_sim()
+    
+    # NEW: Reward component visualization
+    visualize_reward_components()
