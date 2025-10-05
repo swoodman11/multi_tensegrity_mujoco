@@ -8,33 +8,60 @@ from pathlib import Path
 from tensegrity_env import TensegrityEnv
 from stable_baselines3 import PPO
 
-def check_gpu_setup():
-    """Verify GPU configuration and system specs following coding guidelines"""
-    print("🔧 GPU & System Setup Verification:")
+def check_system_requirements():
+    """
+    Comprehensive system check for GPU training requirements - matching gpu_training.py
     
+    Returns:
+        success: bool - Whether system meets minimum requirements
+        gpu_name: str - GPU model name (lowercase)
+        memory_specs: Tuple[float, float] - (GPU VRAM GB, System RAM GB)
+    """
+    print("🔧 System Requirements Check")
+    print("=" * 50)
+    
+    # CUDA availability check
     if not torch.cuda.is_available():
-        print("❌ CUDA not available")
+        print("❌ CUDA not available - GPU training not possible")
+        print("   Install CUDA toolkit: https://developer.nvidia.com/cuda-toolkit")
         return False, None, None
     
-    gpu_name = torch.cuda.get_device_name(0)
-    gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1e9
+    # GPU specifications
+    gpu_name = torch.cuda.get_device_name(0).lower()
+    gpu_properties = torch.cuda.get_device_properties(0)
+    gpu_memory_gb = gpu_properties.total_memory / 1e9
     
-    # Get system RAM (approximate)
-    system_ram = psutil.virtual_memory().total / 1e9
+    # System RAM
+    system_memory = psutil.virtual_memory()
+    system_ram_gb = system_memory.total / 1e9
     
-    print(f"   ✅ GPU: {gpu_name}")
-    print(f"   ✅ GPU VRAM: {gpu_memory:.1f}GB")
-    print(f"   ✅ System RAM: {system_ram:.1f}GB")
+    # Minimum requirements check
+    min_gpu_memory = 6.0  # Minimum 6GB VRAM
+    min_system_ram = 16.0  # Minimum 16GB RAM
     
-    # Check current memory usage
+    print(f"✅ GPU: {torch.cuda.get_device_name(0)}")
+    print(f"✅ GPU VRAM: {gpu_memory_gb:.1f}GB")
+    print(f"✅ System RAM: {system_ram_gb:.1f}GB")
+    print(f"✅ CUDA Version: {torch.version.cuda}")
+    print(f"✅ PyTorch Version: {torch.__version__}")
+    
+    # Requirements validation
+    if gpu_memory_gb < min_gpu_memory:
+        print(f"❌ Insufficient GPU memory: {gpu_memory_gb:.1f}GB < {min_gpu_memory}GB required")
+        return False, gpu_name, (gpu_memory_gb, system_ram_gb)
+    
+    if system_ram_gb < min_system_ram:
+        print(f"⚠️  Low system RAM: {system_ram_gb:.1f}GB (recommend >{min_system_ram}GB)")
+    
+    # Clear GPU cache and check current usage
     torch.cuda.empty_cache()
-    allocated = torch.cuda.memory_allocated(0) / 1e9
-    reserved = torch.cuda.memory_reserved(0) / 1e9
+    current_usage = torch.cuda.memory_allocated(0) / 1e9
+    available_memory = gpu_memory_gb - current_usage - 1.0  # Reserve 1GB
     
-    print(f"   📊 GPU Memory - Allocated: {allocated:.2f}GB, Reserved: {reserved:.2f}GB")
-    print(f"   🚀 Available for training: ~{gpu_memory - 1.0:.1f}GB")
+    print(f"📊 Available GPU memory: ~{available_memory:.1f}GB")
+    print("🚀 System ready for GPU training!")
     
-    return True, gpu_name.lower(), (gpu_memory, system_ram)
+    return True, gpu_name, (gpu_memory_gb, system_ram_gb)
 
 def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timesteps=75000, demo_cycles=None):
     """
@@ -49,7 +76,7 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
     
     try:
         # 1. Environment setup - CRITICAL: verify obs_dim consistency per coding guidelines
-        print("\n1. Setting up environment...")
+        print("\n1️⃣ Environment Setup...")
         start_time = time.time()
         
         env = TensegrityEnv(visualize=False)  # No visualization for GPU training
@@ -62,16 +89,27 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
             print(f"⚠️  MISMATCH FOUND: Expected obs_dim={expected_obs_dim} but got {actual_obs_dim}")
             print("   Cross-referencing with simulator...")
             print(f"   Simulator obs_dim: {env.sim.obs_dim}")
+        else:
+            print(f"✅ Observation dimensions verified: {actual_obs_dim}")
+        
+        print(f"✅ Environment configured:")
+        print(f"   Observation space: {env.observation_space.shape}")
+        print(f"   Action space: {env.action_space.shape}")
+        print(f"   Action bounds: [{env.action_space.low[0]:.1f}, {env.action_space.high[0]:.1f}]")
         
         timing_breakdown['Environment Setup'] = time.time() - start_time
-        print(f"   Environment setup completed in {timing_breakdown['Environment Setup']:.2f} seconds")
+        print(f"   ✅ Environment setup completed ({timing_breakdown['Environment Setup']:.2f}s)")
         
         # 2. Roll sequence demonstration generation - preserving your exact pattern
-        print("\n2. Generating roll sequence demonstrations...")
+        print("\n2️⃣ Generating Roll Sequence Demonstrations...")
         start_time = time.time()
         
         # Your exact roll_sequence from pretraining.py
         roll_sequence = np.array([
+            [0.5, 0.5, 0.5, 0.5, 0.5, 0.5,   0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+            [0.5, 0.5, 0.5, 0.5, 0.5, 0.5,   0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+            [0.5, 0.5, 0.5, 0.5, 0.5, 0.5,   0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+            [0.5, 0.5, 0.5, 0.5, 0.5, 0.5,   0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
             [1.0, 1.0, 0.1, 1.0, 1.0, 0.1,   0.1, 0.8, 0.0, 1.0, 1.0, 0.0],
             [0.0, 1.0, 1.0, 0.0, 0.8, 0.1,   1.0, 0.1, 1.0, 1.0, 0.1, 1.0],
             [1.0, 0.1, 1.0, 1.0, 0.1, 1.0,   0.0, 0.1, 0.8, 0.0, 1.0, 1.0],
@@ -106,7 +144,7 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
             if "rtx5090" in config_name:
                 num_cycles = 2000
             elif "rtx4090" in config_name:
-                num_cycles = 1000
+                num_cycles = 100 #1000
             elif "rtx2080ti_32gb" in config_name:
                 num_cycles = 300
             else:
@@ -138,13 +176,16 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
         print(f"   Generated {len(trajectory['observations'])} demonstration samples")
         
         # 3. RTX 4090-optimized PPO model - leveraging full GPU power
-        print("\n3. Initializing RTX 4090-optimized PPO model...")
+        print("\n3️⃣ PPO Model Initialization...")
         start_time = time.time()
         
         # Monitor GPU memory
         torch.cuda.empty_cache()
         initial_memory = torch.cuda.memory_allocated(0) / 1e9
-        print(f"   GPU memory before model init: {initial_memory:.2f}GB")
+        max_gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1e9
+        
+        print(f"   GPU Memory - Allocated: {initial_memory:.2f}GB")
+        print(f"   GPU Memory - Available: {max_gpu_memory - initial_memory:.2f}GB")
         
         model = PPO(
             "MlpPolicy",
@@ -156,13 +197,19 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
         )
         
         model_memory = torch.cuda.memory_allocated(0) / 1e9
-        print(f"   GPU memory after model init: {model_memory:.2f}GB (Δ{model_memory - initial_memory:.2f}GB)")
+        memory_increase = model_memory - initial_memory
+        
+        print(f"   ✅ Model initialized")
+        print(f"   GPU Memory after model: {model_memory:.2f}GB (+{memory_increase:.2f}GB)")
+        print(f"   Learning rate: {model_params['learning_rate']}")
+        print(f"   Batch size: {model_params['batch_size']}")
+        print(f"   Network architecture: {model_params['policy_kwargs']['net_arch']}")
         
         timing_breakdown['Model Initialization'] = time.time() - start_time
-        print(f"   RTX 4090 PPO model initialization completed in {timing_breakdown['Model Initialization']:.2f} seconds")
+        print(f"   ✅ PPO model initialization completed ({timing_breakdown['Model Initialization']:.2f}s)")
         
         # 4. GPU-accelerated behavioral cloning
-        print("\n4. GPU-accelerated behavioral cloning...")
+        print("\n4️⃣ GPU-Accelerated Behavioral Cloning...")
         start_time = time.time()
         
         all_observations = np.array(trajectory["observations"], dtype=np.float32)
@@ -202,36 +249,45 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
                 print(f"   Epoch {epoch}: Loss={avg_loss:.4f}, GPU={current_memory:.2f}GB")
         
         timing_breakdown['Behavioral Cloning'] = time.time() - start_time
-        print(f"   Behavioral cloning completed in {timing_breakdown['Behavioral Cloning']:.2f} seconds")
+        print(f"   ✅ Behavioral cloning completed ({timing_breakdown['Behavioral Cloning']:.2f}s)")
         
         # 5. RL fine-tuning with RTX 4090 power
-        print("\n5. RL fine-tuning with RTX 4090 acceleration...")
+        print("\n5️⃣ RL Fine-Tuning...")
         start_time = time.time()
         
         # Monitor training memory usage
         pre_training_memory = torch.cuda.memory_allocated(0) / 1e9
         print(f"   GPU memory before RL training: {pre_training_memory:.2f}GB")
+        print(f"   Total timesteps: {total_timesteps:,}")
+        print(f"   Training started at: {datetime.now().strftime('%H:%M:%S')}")
         
-        model.learn(total_timesteps=total_timesteps)
+        # Execute training with progress bar
+        model.learn(
+            total_timesteps=total_timesteps,
+            progress_bar=True
+        )
         
         post_training_memory = torch.cuda.memory_allocated(0) / 1e9
+        peak_memory = torch.cuda.max_memory_allocated(0) / 1e9
         print(f"   GPU memory after RL training: {post_training_memory:.2f}GB")
+        print(f"   Peak GPU memory: {peak_memory:.2f}GB")
         
         timing_breakdown['RL Training'] = time.time() - start_time
-        print(f"   RL training completed in {timing_breakdown['RL Training']:.2f} seconds")
+        print(f"   ✅ RL training completed ({timing_breakdown['RL Training']:.2f}s)")
         
         # 6. Save model with timestamp
-        print("\n6. Saving trained model...")
+        print("\n6️⃣ Saving Trained Model...")
         start_time = time.time()
         
         # Generate timestamp for unique model naming
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        save_path = f"trained_models/ppo_gpu_{config_name}_{timestamp}"
-        Path("trained_models").mkdir(exist_ok=True)
+        save_path = f"trained_models_gpu/ppo_gpu_pretraining_{config_name}_{timestamp}"
+        Path("trained_models_gpu").mkdir(exist_ok=True)
         model.save(save_path)
         
         timing_breakdown['Model Saving'] = time.time() - start_time
-        print(f"   Model saved to {save_path} in {timing_breakdown['Model Saving']:.2f} seconds")
+        print(f"   ✅ Model saved to: {save_path}")
+        print(f"   ✅ Model saving completed ({timing_breakdown['Model Saving']:.2f}s)")
         
         # Print comprehensive timing summary
         total_time = sum(timing_breakdown.values())
@@ -280,8 +336,8 @@ def gpu_optimized_configs():
             "n_epochs": 15,         # More epochs with GPU speed, might overfit
             "gamma": 0.995,
             "gae_lambda": 0.95,
-            "clip_range": 0.2,
-            "ent_coef": 0.05, # was 0.01, promotes exploration
+            "clip_range": 0.5,
+            "ent_coef": 0.5, # was 0.01, promotes exploration
             "vf_coef": 1.0,
             "max_grad_norm": 0.5,
             "policy_kwargs": dict(
@@ -296,8 +352,8 @@ def gpu_optimized_configs():
             "n_epochs": 5,         # Fewer epochs to prevent overfitting
             "gamma": 0.999,         # Long-term focus
             "gae_lambda": 0.95,
-            "clip_range": 0.2,
-            "ent_coef": 0.05,      # was 0.01, promotes exploration
+            "clip_range": 0.5,
+            "ent_coef": 0.5,      # was 0.01, promotes exploration
             "vf_coef": 1.0,
             "max_grad_norm": 0.5,
             "policy_kwargs": dict(
@@ -378,9 +434,9 @@ def gpu_optimized_configs():
 def main():
     """Main GPU training pipeline with automatic hardware detection"""
     
-    gpu_available, gpu_name, memory_specs = check_gpu_setup()
+    gpu_available, gpu_name, memory_specs = check_system_requirements()
     if not gpu_available:
-        print("❌ GPU setup failed")
+        print("❌ System requirements not met. Exiting.")
         return
     
     gpu_memory_gb, system_ram_gb = memory_specs
@@ -396,7 +452,7 @@ def main():
     elif "4090" in gpu_name:
         selected_configs = {k: v for k, v in configs.items() if "rtx4090" in k}
         timesteps = 100000  # Standard for RTX 4090
-        cycles = 1000       # Large demonstration cycles
+        cycles = 15       # Large demonstration cycles
         print(f"🚀 RTX 4090 detected! Using optimized configurations for {gpu_memory_gb:.1f}GB VRAM")
         
     elif "2080" in gpu_name and system_ram_gb >= 24:
@@ -409,7 +465,7 @@ def main():
         # Default to RTX 4090 large as requested
         selected_configs = {"rtx4090_large": configs["rtx4090_large"]}
         timesteps = 100000
-        cycles = 1000
+        cycles = 15 #was 1000
         print(f"⚠️  Unknown/unsupported GPU '{gpu_name}' ({gpu_memory_gb:.1f}GB)")
         print(f"    Defaulting to RTX 4090 Large configuration as requested")
         print(f"    WARNING: This may cause GPU OOM if your hardware has insufficient VRAM")
@@ -435,16 +491,44 @@ def main():
     
     # Final summary
     print(f"\n{'='*80}")
-    print("🏁 FINAL GPU TRAINING RESULTS")
+    print("🏁 GPU PRETRAINING RESULTS SUMMARY")
     print(f"{'='*80}")
+    
+    successful_configs = []
+    failed_configs = []
     
     for config, result in results.items():
         if result["success"]:
+            successful_configs.append(config)
             total_time = sum(result["timing"].values())
             peak_memory = result["peak_memory"]
-            print(f"{config:25}: ✅ {total_time:.1f}s, Peak: {peak_memory:.1f}GB")
+            print(f"✅ {config}")
+            print(f"   Total time: {total_time:.2f}s ({total_time/3600:.2f}h)")
+            print(f"   Peak GPU usage: {peak_memory:.2f}GB")
+            print(f"   Average training speed: {timesteps / result['timing']['RL Training']:.1f} timesteps/s")
         else:
-            print(f"{config:25}: ❌ {result['error']}")
+            failed_configs.append(config)
+            print(f"❌ {config}: {result['error']}")
+    
+    print(f"\n📊 Training Summary:")
+    print(f"   Successful configurations: {len(successful_configs)}/{len(results)}")
+    print(f"   Training timesteps per config: {timesteps:,}")
+    print(f"   Demonstration cycles per config: {cycles}")
+    
+    if successful_configs:
+        print(f"\n🎮 To test your trained models:")
+        for config in successful_configs:
+            model_path = f"trained_models_gpu/ppo_gpu_pretraining_{config}_*"
+            print(f"   python test_trained_model.py --model {model_path}")
+        
+        print(f"\n📊 To view training progress:")
+        print(f"   tensorboard --logdir ./ppo_tensegrity_tensorboard_{successful_configs[0]}/")
+    
+    if failed_configs:
+        print(f"\n⚠️  Failed configurations may need:")
+        print(f"   - Reduced batch_size or n_steps")
+        print(f"   - Smaller network architectures")
+        print(f"   - More system RAM or GPU VRAM")
 
 if __name__ == "__main__":
     main()
