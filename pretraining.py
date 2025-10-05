@@ -529,3 +529,7 @@ def main():
 
     print(f"\nTotal training time: {time_str}")
     print("="*60)
+
+# Add this at the very end of your pretraining.py file:
+if __name__ == "__main__":
+    main()  # ✅ This line is probably missing
