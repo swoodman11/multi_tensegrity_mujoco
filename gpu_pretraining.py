@@ -285,7 +285,7 @@ def gpu_optimized_configs():
             "gamma": 0.995,
             "gae_lambda": 0.95,
             "clip_range": 0.5,
-            "ent_coef": 1.0, # was 0.01, promotes exploration
+            "ent_coef": 0.5, # was 0.01, promotes exploration
             "vf_coef": 1.0,
             "max_grad_norm": 0.5,
             "policy_kwargs": dict(
@@ -301,7 +301,7 @@ def gpu_optimized_configs():
             "gamma": 0.999,         # Long-term focus
             "gae_lambda": 0.95,
             "clip_range": 0.5,
-            "ent_coef": 1.0,      # was 0.01, promotes exploration
+            "ent_coef": 0.5,      # was 0.01, promotes exploration
             "vf_coef": 1.0,
             "max_grad_norm": 0.5,
             "policy_kwargs": dict(
@@ -399,8 +399,8 @@ def main():
         
     elif "4090" in gpu_name:
         selected_configs = {k: v for k, v in configs.items() if "rtx4090" in k}
-        timesteps = 200000  # Standard for RTX 4090
-        cycles = 1000       # Large demonstration cycles
+        timesteps = 100000  # Standard for RTX 4090
+        cycles = 15       # Large demonstration cycles
         print(f"🚀 RTX 4090 detected! Using optimized configurations for {gpu_memory_gb:.1f}GB VRAM")
         
     elif "2080" in gpu_name and system_ram_gb >= 24:
@@ -413,7 +413,7 @@ def main():
         # Default to RTX 4090 large as requested
         selected_configs = {"rtx4090_large": configs["rtx4090_large"]}
         timesteps = 100000
-        cycles = 1000
+        cycles = 15 #was 1000
         print(f"⚠️  Unknown/unsupported GPU '{gpu_name}' ({gpu_memory_gb:.1f}GB)")
         print(f"    Defaulting to RTX 4090 Large configuration as requested")
         print(f"    WARNING: This may cause GPU OOM if your hardware has insufficient VRAM")
