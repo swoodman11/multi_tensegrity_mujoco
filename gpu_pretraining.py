@@ -281,8 +281,8 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
         
         # Generate timestamp for unique model naming
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        save_path = f"trained_models_gpu/ppo_gpu_pretraining_{config_name}_{timestamp}"
-        Path("trained_models_gpu").mkdir(exist_ok=True)
+        save_path = f"models/gpu/ppo_gpu_pretraining_{config_name}_{timestamp}"
+        Path("models/gpu").mkdir(parents=True, exist_ok=True)
         model.save(save_path)
         
         timing_breakdown['Model Saving'] = time.time() - start_time
@@ -518,7 +518,7 @@ def main():
     if successful_configs:
         print(f"\n🎮 To test your trained models:")
         for config in successful_configs:
-            model_path = f"trained_models_gpu/ppo_gpu_pretraining_{config}_*"
+            model_path = f"models/gpu/ppo_gpu_pretraining_{config}_*"
             print(f"   python test_trained_model.py --model {model_path}")
         
         print(f"\n📊 To view training progress:")

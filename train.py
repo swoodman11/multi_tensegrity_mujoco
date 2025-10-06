@@ -165,9 +165,9 @@ def main():
         # 6. Training Execution
         print(f"\n5️⃣ Starting PPO Training...")
         training_exec_time = time.time()
-        
-        # Create save directory
-        save_dir = Path("trained_models")
+
+        # Create save directory (standardized to 'models')
+        save_dir = Path("models")
         save_dir.mkdir(exist_ok=True)
         
         print(f"   Training will save models to: {save_dir}")

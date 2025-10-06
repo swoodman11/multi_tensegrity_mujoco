@@ -44,7 +44,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 
-def find_most_recent_model(models_dir="trained_models", pattern="*_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9][0-9][0-9][0-9][0-9][0-9].zip"):
+def find_most_recent_model(models_dir="models", pattern="*_[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9][0-9][0-9][0-9][0-9][0-9].zip"):
     """Find the most recent trained model based on timestamp in filename.
     
     Default pattern matches any file ending with timestamp format: YYYYMMDD_HHMMSS.zip

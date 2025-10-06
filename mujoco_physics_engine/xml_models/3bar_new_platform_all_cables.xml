@@ -6,7 +6,7 @@
     <include file="./common/skybox.xml"/>
     <include file="./common/visual.xml"/>
     <include file="./common/materials.xml"/>
-    <compiler angle="degree" coordinate="global" inertiafromgeom="true" autolimits="true">
+    <compiler angle="degree" inertiafromgeom="true" autolimits="true">
         <lengthrange timestep="0.01"/>
     </compiler>
 
@@ -15,8 +15,8 @@
             cone="elliptic"
             solver="Newton"
             integrator="Euler">
-        <flag sensornoise="disable"
-              frictionloss="disable"/>
+        <!-- Removed deprecated/unsupported attribute 'sensornoise' -->
+        <flag frictionloss="disable"/>
     </option>
 
     <visual>

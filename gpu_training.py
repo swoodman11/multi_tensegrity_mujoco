@@ -644,9 +644,9 @@ def gpu_ppo_training(
         print(f"\n6️⃣ Starting PPO Training...")
         training_exec_time = time.time()
         
-        # Create save directory
-        save_dir = Path("trained_models_gpu")
-        save_dir.mkdir(exist_ok=True)
+        # Create save directory (standardize under models/gpu)
+        save_dir = Path("models/gpu")
+        save_dir.mkdir(parents=True, exist_ok=True)
         
         print(f"   Training will save models to: {save_dir}")
         print(f"   Monitor progress with: tensorboard --logdir {log_dir}")
