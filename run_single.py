@@ -221,6 +221,8 @@ def main():
             if "rest_lengths" in info:
                 rest_lengths_log.append(info["rest_lengths"])
 
+            
+
             # Offscreen frame (only needed for saving video); interactive viewer updates via viewer.sync()
             frame = None
             if args.video_save and internal_visualize:
@@ -389,12 +391,42 @@ def main():
             except Exception as e:
                 print(f"Plotting failed: {e}")
 
+        # After your simulation
         # Clean up interactive viewer
         if viewer is not None:
             try:
                 viewer.close()
             except Exception:
                 pass
+
+        # After simulation loop ends
+        print("\n=== CONTROLS ANALYSIS ===")
+        if controls_log:
+            # Quick summary
+            controls_array = np.array(controls_log)
+            print(f"Collected {len(controls_log)} control records")
+            print(f"Control shape: {controls_array.shape}")
+            print(f"Control range: [{np.min(controls_array):.3f}, {np.max(controls_array):.3f}]")
+            
+            # Save to file
+            controls_data = {
+                "controls_log": controls_array.tolist(),
+                "num_actuators": controls_array.shape[1],
+                "total_steps": len(controls_log)
+            }
+            
+            controls_file = output_dir / "controls_log.json"
+            with open(controls_file, 'w') as f:
+                json.dump(controls_data, f, indent=2)
+            
+            print(f"Controls saved to: {controls_file}")
+            
+            # Generate plot if requested
+            if args.plots:
+                plot_controls_log(controls_log, output_dir)
+        else:
+            print("No controls collected")
+        print("========================")
 
 
 if __name__ == "__main__":

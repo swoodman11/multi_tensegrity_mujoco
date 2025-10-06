@@ -275,27 +275,27 @@
             <site site="s_2_b4"/>
             <site site="s_b4_2"/>
         </spatial>
-        <spatial name="td_6" springlength="0.65" stiffness="1000" width="0.025" rgba="1 1 1 0.5">
+        <spatial name="td_6" springlength="0.65" stiffness="10000" width="0.025" rgba="1 1 1 0.5">
             <site site="s_3_5"/>
             <site site="s_5_3"/>
         </spatial>
-        <spatial name="td_7" springlength="0.65" stiffness="1000" width="0.025" rgba="1 1 1 0.5">
+        <spatial name="td_7" springlength="0.65" stiffness="10000" width="0.025" rgba="1 1 1 0.5">
             <site site="s_1_3"/>
             <site site="s_3_1"/>
         </spatial>
-        <spatial name="td_8" springlength="0.65" stiffness="1000" width="0.025" rgba="1 1 1 0.5">
+        <spatial name="td_8" springlength="0.65" stiffness="10000" width="0.025" rgba="1 1 1 0.5">
             <site site="s_1_5"/>
             <site site="s_5_1"/>
         </spatial>
-        <spatial name="td_9" springlength="0.65" stiffness="1000" width="0.025" rgba="1 1 1 0.5">
+        <spatial name="td_9" springlength="0.65" stiffness="10000" width="0.025" rgba="1 1 1 0.5">
             <site site="s_0_2"/>
             <site site="s_2_0"/>
         </spatial>
-        <spatial name="td_10" springlength="0.65" stiffness="1000" width="0.025" rgba="1 1 1 0.5">
+        <spatial name="td_10" springlength="0.65" stiffness="10000" width="0.025" rgba="1 1 1 0.5">
             <site site="s_0_4"/>
             <site site="s_4_0"/>
         </spatial>
-        <spatial name="td_11" springlength="0.65" stiffness="1000" width="0.025" rgba="1 1 1 0.5">
+        <spatial name="td_11" springlength="0.65" stiffness="10000" width="0.025" rgba="1 1 1 0.5">
             <site site="s_2_4"/>
             <site site="s_4_2"/>
         </spatial>

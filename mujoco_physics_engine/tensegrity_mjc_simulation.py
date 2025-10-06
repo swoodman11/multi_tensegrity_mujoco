@@ -456,7 +456,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         consistent_direction_reward *= 3.0     # Reward consistent direction
         displacement_progress_reward *= 10.0    # Reward actual angular displacement
 
-        reward = (velocity_reward + distance_reward + penalties*10.0 + 
+        reward = (velocity_reward + distance_reward + penalties*2.0 + 
           cumulative_rotation_reward + consistent_direction_reward + displacement_progress_reward)
         # # Calculate total forward distance reward
         # if hasattr(self, 'prev_pos') and self.prev_pos is not None:

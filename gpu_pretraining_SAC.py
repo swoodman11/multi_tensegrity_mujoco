@@ -190,23 +190,23 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
         print(f"   GPU Memory - Available: {max_gpu_memory - initial_memory:.2f}GB")
         
         # #For PPO
-        model = PPO(
-            "MlpPolicy",
-            env,
-            verbose=1,
-            tensorboard_log=f"./ppo_tensegrity_tensorboard_{config_name}/",
-            device=device,
-            **model_params
-        )
-        # for SAC:
-        # model = SAC(
+        # model = PPO(
         #     "MlpPolicy",
         #     env,
         #     verbose=1,
-        #     tensorboard_log=f"./sac_tensegrity_tensorboard_{config_name}/",
+        #     tensorboard_log=f"./ppo_tensegrity_tensorboard_{config_name}/",
         #     device=device,
         #     **model_params
         # )
+        # for SAC:
+        model = SAC(
+            "MlpPolicy",
+            env,
+            verbose=1,
+            tensorboard_log=f"./sac_tensegrity_tensorboard_{config_name}/",
+            device=device,
+            **model_params
+        )
 
         ## for Td3
         # model = TD3(
@@ -259,7 +259,7 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
                 action_tensor = torch.FloatTensor(batch_actions).to(device)
                 
                 with torch.no_grad():
-                    actions_pred, _, _ = model.policy(obs_tensor)
+                    actions_pred = model.policy(obs_tensor) # was actions_pred, _, _ = model.policy(obs_tensor)
                 
                 loss = torch.nn.functional.mse_loss(actions_pred, action_tensor)
                 epoch_loss += loss.item()
@@ -303,7 +303,7 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
         
         # Generate timestamp for unique model naming
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        save_path = f"models/gpu/ppo_gpu_pretraining_{config_name}_{timestamp}"
+        save_path = f"models/gpu/sac_gpu_pretraining_{config_name}_{timestamp}"
         Path("models/gpu").mkdir(parents=True, exist_ok=True)
         model.save(save_path)
         
@@ -350,104 +350,63 @@ def gpu_optimized_configs():
     """GPU-optimized configurations for different hardware setups"""
     
     return {
-        # RTX 4090 configurations (24GB VRAM)
         "rtx4090_large": {
             "learning_rate": 2e-4,
-            "n_steps": 16384,        # Large rollout buffer for RTX 4090
-            "batch_size": 1024,      # Big batches for GPU efficiency
-            "n_epochs": 15,         # More epochs with GPU speed, might overfit
+            "batch_size": 1024,
             "gamma": 0.999,
-            "gae_lambda": 0.95,
-            "clip_range": 0.2,
-            "ent_coef": 0.01, # was 0.01, promotes exploration
-            "vf_coef": 1.0,
-            "max_grad_norm": 0.5,
+            "ent_coef": 0.01,
             "policy_kwargs": dict(
-                net_arch=dict(pi=[1024, 1024, 512], vf=[1024, 1024, 512]),  # Large networks
+                net_arch=[2048, 1024, 512, 256],  # was [256,256,128]Shared for all networks in SAC
                 activation_fn=torch.nn.ReLU
             )
         },
         "rtx4090_ultra": {
             "learning_rate": 2e-4,
-            "n_steps": 16384,       # Very large rollout for maximum GPU utilization
-            "batch_size": 1024,     # Massive batches
-            "n_epochs": 5,         # Fewer epochs to prevent overfitting
-            "gamma": 0.999,         # Long-term focus
-            "gae_lambda": 0.95,
-            "clip_range": 0.2,
-            "ent_coef": 0.01,      # was 0.01, promotes exploration
-            "vf_coef": 1.0,
-            "max_grad_norm": 0.5,
+            "batch_size": 1024,
+            "gamma": 0.999,
+            "ent_coef": 0.01,
             "policy_kwargs": dict(
-                net_arch=dict(pi=[2048, 1024, 512, 256], vf=[2048, 1024, 512, 256]),  # Very deep
+                net_arch=[2048, 1024, 512, 256],
                 activation_fn=torch.nn.ReLU
             )
         },
-        
-        # RTX 2080 Ti configurations (11GB VRAM + 32GB RAM) - EXPLORATION FOCUSED
         "rtx2080ti_32gb_balanced": {
-            "learning_rate": 5e-4,   # Higher LR for faster exploration of action space
-            "n_steps": 8192,         # Larger rollout buffer with 32GB RAM
-            "batch_size": 512,       # Moderate batch size for 11GB VRAM
-            "n_epochs": 8,           # Fewer epochs to prevent over-fitting to early patterns
-            "gamma": 0.99,           # Shorter discount factor to encourage immediate exploration
-            "gae_lambda": 0.9,       # Reduced GAE lambda for less bias toward long-term rewards
-            "clip_range": 0.3,       # Larger clip range allows bigger policy updates
-            "ent_coef": 0.15,        # MAJOR INCREASE: Much higher entropy bonus for exploration
-            "vf_coef": 0.5,          # Reduced value function weight to prioritize policy exploration
-            "max_grad_norm": 1.0,    # Higher gradient norm allows larger updates
+            "learning_rate": 5e-4,
+            "batch_size": 512,
+            "gamma": 0.99,
+            "ent_coef": 0.15,
             "policy_kwargs": dict(
-                net_arch=dict(pi=[768, 768, 384], vf=[768, 768, 384]),  # Larger than typical 2080 Ti
+                net_arch=[768, 768, 384],
                 activation_fn=torch.nn.ReLU
             )
         },
         "rtx2080ti_32gb_efficient": {
-            "learning_rate": 4e-4,   # Higher LR for exploration
-            "n_steps": 6144,         # Conservative GPU memory usage
-            "batch_size": 384,       # Safe for 11GB VRAM
-            "n_epochs": 6,           # Fewer epochs to avoid exploitation too early
-            "gamma": 0.985,          # Shorter horizon to focus on immediate exploration
-            "gae_lambda": 0.9,       # Reduced for less long-term bias
-            "clip_range": 0.25,      # Increased clip range for larger policy changes
-            "ent_coef": 0.12,        # MAJOR INCREASE: High entropy for exploration
-            "vf_coef": 0.4,          # Lower value function emphasis
-            "max_grad_norm": 0.8,    # Higher gradient norm for larger updates
+            "learning_rate": 4e-4,
+            "batch_size": 384,
+            "gamma": 0.985,
+            "ent_coef": 0.12,
             "policy_kwargs": dict(
-                net_arch=dict(pi=[512, 512, 256], vf=[512, 512, 256]),  # Conservative GPU memory
+                net_arch=[512, 512, 256],
                 activation_fn=torch.nn.ReLU
             )
         },
-        
-        # RTX 5090 configurations (32GB VRAM + 32GB RAM) - Next-gen powerhouse
         "rtx5090_extreme": {
             "learning_rate": 3e-4,
-            "n_steps": 32768,        # Massive rollout buffer for 32GB VRAM
-            "batch_size": 2048,      # Huge batches for ultimate efficiency
-            "n_epochs": 20,          # More epochs with massive GPU power
-            "gamma": 0.999,          # Long-term planning
-            "gae_lambda": 0.95,
-            "clip_range": 0.2,
-            "ent_coef": 0.08,        # High exploration with powerful GPU
-            "vf_coef": 1.0,
-            "max_grad_norm": 0.5,
+            "batch_size": 2048,
+            "gamma": 0.999,
+            "ent_coef": 0.08,
             "policy_kwargs": dict(
-                net_arch=dict(pi=[4096, 2048, 1024, 512], vf=[4096, 2048, 1024, 512]),  # Massive networks
+                net_arch=[4096, 2048, 1024, 512],
                 activation_fn=torch.nn.ReLU
             )
         },
         "rtx5090_ultra": {
             "learning_rate": 3e-4,
-            "n_steps": 24576,        # Very large but not maximum
-            "batch_size": 1536,      # Large batches
-            "n_epochs": 12,          # Balanced epochs
-            "gamma": 0.998,          
-            "gae_lambda": 0.95,
-            "clip_range": 0.2,
-            "ent_coef": 0.06,        
-            "vf_coef": 1.0,
-            "max_grad_norm": 0.5,
+            "batch_size": 1536,
+            "gamma": 0.998,
+            "ent_coef": 0.06,
             "policy_kwargs": dict(
-                net_arch=dict(pi=[2048, 2048, 1024, 256], vf=[2048, 2048, 1024, 256]),  # Very deep
+                net_arch=[2048, 2048, 1024, 256],
                 activation_fn=torch.nn.ReLU
             )
         }
@@ -473,8 +432,8 @@ def main():
         
     elif "4090" in gpu_name:
         selected_configs = {k: v for k, v in configs.items() if "rtx4090" in k}
-        timesteps = 200000  # Standard for RTX 4090
-        cycles = 1515       # Large demonstration cycles
+        timesteps = 5000000  # Standard for RTX 4090
+        cycles = 2000      # Large demonstration cycles
         print(f"🚀 RTX 4090 detected! Using optimized configurations for {gpu_memory_gb:.1f}GB VRAM")
         
     elif "2080" in gpu_name and system_ram_gb >= 24:
