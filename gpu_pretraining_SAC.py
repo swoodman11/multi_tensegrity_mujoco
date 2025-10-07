@@ -9,6 +9,8 @@ from tensegrity_env import TensegrityEnv
 from stable_baselines3 import PPO
 from stable_baselines3 import SAC
 from stable_baselines3 import TD3
+from stable_baselines3.common.callbacks import EvalCallback
+
 
 def check_system_requirements():
     """
@@ -283,9 +285,24 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
         print(f"   Total timesteps: {total_timesteps:,}")
         print(f"   Training started at: {datetime.now().strftime('%H:%M:%S')}")
         
+
+        # Set up evaluation environment (no render)
+        eval_env = TensegrityEnv(visualize=False)
+
+        eval_callback = EvalCallback(
+            eval_env,
+            best_model_save_path=f"./logs/best_model_{config_name}/",
+            log_path=f"./logs/evals_{config_name}/",
+            eval_freq=10000,                   # <- 🔁 Evaluate every 10k steps
+            deterministic=True,
+            render=False,
+            verbose=1
+        )
+
         # Execute training with progress bar
         model.learn(
             total_timesteps=total_timesteps,
+            # callback=eval_callback,
             progress_bar=True
         )
         
@@ -351,20 +368,20 @@ def gpu_optimized_configs():
     
     return {
         "rtx4090_large": {
-            "learning_rate": 2e-4,
-            "batch_size": 1024,
+            "learning_rate": 3e-4,
+            "batch_size": 2048,
             "gamma": 0.999,
-            "ent_coef": 0.01,
+            "ent_coef": 0.1,
             "policy_kwargs": dict(
                 net_arch=[2048, 1024, 512, 256],  # was [256,256,128]Shared for all networks in SAC
                 activation_fn=torch.nn.ReLU
             )
         },
         "rtx4090_ultra": {
-            "learning_rate": 2e-4,
-            "batch_size": 1024,
+            "learning_rate": 3e-4, #was 2e-4
+            "batch_size": 2048,
             "gamma": 0.999,
-            "ent_coef": 0.01,
+            "ent_coef": 0.1, #was 0.01
             "policy_kwargs": dict(
                 net_arch=[2048, 1024, 512, 256],
                 activation_fn=torch.nn.ReLU
@@ -432,7 +449,7 @@ def main():
         
     elif "4090" in gpu_name:
         selected_configs = {k: v for k, v in configs.items() if "rtx4090" in k}
-        timesteps = 5000000  # Standard for RTX 4090
+        timesteps = 2000000  # Standard for RTX 4090
         cycles = 2000      # Large demonstration cycles
         print(f"🚀 RTX 4090 detected! Using optimized configurations for {gpu_memory_gb:.1f}GB VRAM")
         
