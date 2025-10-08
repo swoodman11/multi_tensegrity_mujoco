@@ -388,42 +388,42 @@ def gpu_optimized_configs():
             )
         },
         "rtx2080ti_32gb_balanced": {
-            "learning_rate": 5e-4,
-            "batch_size": 512,
-            "gamma": 0.99,
-            "ent_coef": 0.15,
+            "learning_rate": 3e-4, #was 2e-4
+            "batch_size": 2048,
+            "gamma": 0.999,
+            "ent_coef": 0.1, #was 0.01
             "policy_kwargs": dict(
-                net_arch=[768, 768, 384],
+                net_arch=[2048, 1024, 512, 256],
                 activation_fn=torch.nn.ReLU
             )
         },
         "rtx2080ti_32gb_efficient": {
-            "learning_rate": 4e-4,
-            "batch_size": 384,
-            "gamma": 0.985,
-            "ent_coef": 0.12,
+            "learning_rate": 3e-4, #was 2e-4
+            "batch_size": 2048,
+            "gamma": 0.999,
+            "ent_coef": 0.1, #was 0.01
             "policy_kwargs": dict(
-                net_arch=[512, 512, 256],
+                net_arch=[2048, 1024, 512, 256],
                 activation_fn=torch.nn.ReLU
             )
         },
         "rtx5090_extreme": {
-            "learning_rate": 3e-4,
+            "learning_rate": 3e-4, #was 2e-4
             "batch_size": 2048,
             "gamma": 0.999,
-            "ent_coef": 0.08,
+            "ent_coef": 0.1, #was 0.01
             "policy_kwargs": dict(
-                net_arch=[4096, 2048, 1024, 512],
+                net_arch=[2048, 1024, 512, 256],
                 activation_fn=torch.nn.ReLU
             )
         },
         "rtx5090_ultra": {
-            "learning_rate": 3e-4,
-            "batch_size": 1536,
-            "gamma": 0.998,
-            "ent_coef": 0.06,
+            "learning_rate": 3e-4, #was 2e-4
+            "batch_size": 2048,
+            "gamma": 0.999,
+            "ent_coef": 0.1, #was 0.01
             "policy_kwargs": dict(
-                net_arch=[2048, 2048, 1024, 256],
+                net_arch=[2048, 1024, 512, 256],
                 activation_fn=torch.nn.ReLU
             )
         }
@@ -443,27 +443,27 @@ def main():
     # Auto-detect optimal configurations based on hardware
     if "5090" in gpu_name:
         selected_configs = {k: v for k, v in configs.items() if "rtx5090" in k}
-        timesteps = 150000  # Extended training for RTX 5090
+        timesteps = 3000000  # Extended training for RTX 5090
         cycles = 2000       # Massive demonstration cycles
         print(f"🚀 RTX 5090 detected! Using next-gen configurations for {gpu_memory_gb:.1f}GB VRAM")
         
     elif "4090" in gpu_name:
         selected_configs = {k: v for k, v in configs.items() if "rtx4090" in k}
-        timesteps = 2000000  # Standard for RTX 4090
+        timesteps = 3000000  # Standard for RTX 4090, was 200000
         cycles = 2000      # Large demonstration cycles
         print(f"🚀 RTX 4090 detected! Using optimized configurations for {gpu_memory_gb:.1f}GB VRAM")
         
     elif "2080" in gpu_name and system_ram_gb >= 24:
         selected_configs = {k: v for k, v in configs.items() if "rtx2080ti_32gb" in k}
-        timesteps = 80000   # Moderate for RTX 2080 Ti + 32GB RAM
-        cycles = 300        # Conservative GPU memory, more system RAM
+        timesteps = 3000000   # Moderate for RTX 2080 Ti + 32GB RAM
+        cycles = 2000        # Conservative GPU memory, more system RAM
         print(f"🚀 RTX 2080 Ti + 32GB RAM detected! Using enhanced configurations")
         
     else:
         # Default to RTX 4090 large as requested
         selected_configs = {"rtx4090_large": configs["rtx4090_large"]}
-        timesteps = 300000
-        cycles = 1500 #was 1000
+        timesteps = 3000000
+        cycles = 2000 #was 1000
         print(f"⚠️  Unknown/unsupported GPU '{gpu_name}' ({gpu_memory_gb:.1f}GB)")
         print(f"    Defaulting to RTX 4090 Large configuration as requested")
         print(f"    WARNING: This may cause GPU OOM if your hardware has insufficient VRAM")
