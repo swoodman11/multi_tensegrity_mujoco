@@ -53,7 +53,10 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         # Observation mode: 'tier2' (96D) or 'legacy104' (104D)
         self.obs_mode = obs_mode if obs_mode in ("tier2", "legacy104") else "tier2"
         self.obs_dim = (96 if self.obs_mode == "tier2" else 104) if obs_dim is None else obs_dim
-
+        if self.visualize and hasattr(self, 'viewer') and self.viewer is not None:
+            # Make camera view bigger - increase distance to zoom out
+            self.viewer.cam.distance = 12.0
+            self.viewer.cam.lookat[0] = 0.0
         # Tuple of cable end point of attachment sites' names
         self.cable_sites = [
             # robot 1
@@ -456,8 +459,12 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         consistent_direction_reward *= 3.0     # Reward consistent direction
         displacement_progress_reward *= 10.0    # Reward actual angular displacement
 
-        reward = (velocity_reward + distance_reward + penalties*2.0 + 
+        # reward = (velocity_reward + distance_reward + penalties*1.0 + 
+        #   cumulative_rotation_reward + consistent_direction_reward + displacement_progress_reward)
+        
+        reward = (penalties*1.0 + 
           cumulative_rotation_reward + consistent_direction_reward + displacement_progress_reward)
+        
         # # Calculate total forward distance reward
         # if hasattr(self, 'prev_pos') and self.prev_pos is not None:
         #     # Calculate displacement from initial state
@@ -712,19 +719,29 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         try:
             # Import here to avoid issues
             import mujoco
+
+            # if self.viewer is not None:
+            #     # Configure camera for bigger view
+            #     self.viewer.cam.distance = 15.0   # Zoom out significantly  
+            #     self.viewer.cam.elevation = -25   # Better viewing angle
+            #     self.viewer.cam.lookat[0] = 0.0   # Center on robot
+            #     self.viewer.cam.lookat[1] = 0.0
+            #     self.viewer.cam.lookat[2] = 2.0   # Elevated view
             
             # Use parent class renderer if available, otherwise create one
             if hasattr(self, 'renderer') and self.renderer is not None:
                 # Use the properly configured renderer from parent class
                 self.renderer.update_scene(self.mjc_data)
                 frame = self.renderer.render()
+                
+
             else:
                 # Fallback: create renderer if it doesn't exist
                 if not hasattr(self, '_renderer'):
                     # Use provided dimensions or defaults
                     if width is None or height is None:
-                        width = 800
-                        height = 600
+                        width = 1800
+                        height = 1800
                     self._renderer = mujoco.Renderer(self.mjc_model, height, width)
                 
                 # Update scene and render
@@ -772,16 +789,16 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         penalties = 0.0
         
         # 1. Prevent excessive bouncing (z-axis exploitation)
-        if hasattr(self, 'prev_pos') and self.prev_pos is not None:
-            z_velocity = abs((robot_pos[2] - self.prev_pos[2]) / self.dt)
-            if z_velocity > 1.0:  # Too much vertical movement
-                penalties -= z_velocity * 5.0
+        # if hasattr(self, 'prev_pos') and self.prev_pos is not None:
+        #     z_velocity = abs((robot_pos[2] - self.prev_pos[2]) / self.dt)
+        #     if z_velocity > 1.0:  # Too much vertical movement
+        #         penalties -= z_velocity * 5.0
         
         # 2. Prevent rapid oscillations in controls
         if hasattr(self, 'prev_controls'):
-            control_change = np.sum(np.abs(controls - self.prev_controls))
+            control_change = np.sum(np.abs(controls - self.prev_controls)) #make this store multiple steps
             if control_change > 2.0:  # Too rapid changes
-                penalties -= control_change * 2.0
+                penalties -= control_change * 50.0 #increasing this, was 2
         self.prev_controls = controls.copy()
         
         # 3. Energy efficiency penalty

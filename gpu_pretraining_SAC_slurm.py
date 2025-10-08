@@ -10,6 +10,8 @@ from stable_baselines3 import PPO
 from stable_baselines3 import SAC
 from stable_baselines3 import TD3
 from stable_baselines3.common.callbacks import EvalCallback
+import os
+
 
 
 def check_system_requirements():
@@ -110,32 +112,27 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
         
         # Your exact roll_sequence from pretraining.py
         roll_sequence = np.array([
-        [1.0, 1.0, 0.1, 1.0, 1.0, 0.1,   0.1, 0.8, 0.0, 1.0, 1.0, 0.0], #start 1=b,2=r,3=g
-        [0.0, 1.0, 1.0, 0.0, 0.8, 0.1,   1.0, 0.1, 1.0, 1.0, 0.1, 1.0],
-        [1.0, 0.1, 1.0, 1.0, 0.1, 1.0,   0.0, 0.1, 0.8, 0.0, 1.0, 1.0],
-        [1.0, 1.0, 0.0, 0.8, 0.1, 1.0,   1.0, 1.0, 0.8, 1.0, 1.0, 0.1],
-        [1.0, 1.0, 0.0, 0.8, 0.1, 1.0,   1.0, 1.0, 0.8, 1.0, 1.0, 0.1],
-        [1.0, 0.1, 0.1, 1.0, 0.1, 0.1,   1.0, 0.8, 0.1, 1.0, 1.0, 0.0],
-        [1.0, 0.5, 0.1, 1.0, 0.4, 0.1,   0.1, 0.8, 0.0, 1.0, 1.0, 0.5],
-        [0.5, 0.5, 1.0, 1.0, 0.4, 0.1,   0.1, 0.8, 0.0, 0.5, 1.0, 1.0],
-        [0.5, 0.5, 1.0, 1.0, 0.4, 0.1,   0.1, 0.8, 0.0, 0.5, 1.0, 1.0],
-        [0.5, 0.5, 1.0, 1.0, 0.4, 0.8,   0.1, 0.8, 0.8, 0.5, 1.0, 1.0],
-        [0.5, 0.5, 1.0, 0.4, 0.4, 0.8,   0.4, 0.8, 0.8, 0.5, 1.0, 1.0],
-        [0.5, 0.5, 1.0, 0.4, 0.4, 0.8,   0.4, 0.8, 0.8, 0.5, 1.0, 1.0],
-        [0.5, 0.5, 1.0, 0.4, 0.4, 0.8,   0.4, 0.8, 0.8, 0.5, 1.0, 1.0],
-        [0.5, 0.5, 1.0, 0.1, 0.4, 0.8,   0.1, 0.8, 0.8, 0.5, 1.0, 1.0],
-        [0.5, 0.5, 1.0, 0.1, 0.4, 0.8,   0.1, 0.8, 0.8, 0.5, 1.0, 1.0],
-        [0.5, 0.5, 1.0, 0.1, 0.4, 0.8,   0.1, 0.8, 0.8, 0.5, 1.0, 1.0], #1=g,2=b,3=r by here and stable
-        [0.5, 0.5, 1.0, 0.4, 0.4, 0.4,   0.4, 0.8, 0.4, 0.5, 1.0, 1.0],
-        [0.5, 0.5, 1.0, 0.8, 0.4, 0.2,   0.8, 0.8, 0.2, 0.5, 1.0, 1.0],
-        [1.0, 0.5, 1.0, 1.0, 0.4, 0.1,   1.0, 0.8, 0.1, 1.0, 1.0, 1.0],
-        [1.0, 0.1, 1.0, 1.0, 0.0, 0.1,   1.0, 0.0, 0.1, 1.0, 1.0, 1.0],
-        [1.0, 0.1, 1.0, 0.1, 0.6, 0.1,   0.1, 0.0, 0.6, 1.0, 0.7, 1.0],
-        [1.0, 0.1, 1.0, 0.6, 0.6, 0.1,   0.6, 0.0, 0.6, 1.0, 0.7, 1.0],
-        [1.0, 0.1, 1.0, 0.6, 0.6, 0.1,   0.6, 0.0, 0.6, 1.0, 0.7, 1.0], #1=r,2=g,3=b
-        [1.0, 0.1, 1.0, 0.6, 0.6, 0.1,   0.6, 0.0, 0.6, 1.0, 0.7, 1.0],
-        
-    ])
+            [0.5, 0.5, 0.5, 0.5, 0.5, 0.5,   0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+            [0.5, 0.5, 0.5, 0.5, 0.5, 0.5,   0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+            [0.5, 0.5, 0.5, 0.5, 0.5, 0.5,   0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+            [0.5, 0.5, 0.5, 0.5, 0.5, 0.5,   0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+            [1.0, 1.0, 0.1, 1.0, 1.0, 0.1,   0.1, 0.8, 0.0, 1.0, 1.0, 0.0],
+            [0.0, 1.0, 1.0, 0.0, 0.8, 0.1,   1.0, 0.1, 1.0, 1.0, 0.1, 1.0],
+            [1.0, 0.1, 1.0, 1.0, 0.1, 1.0,   0.0, 0.1, 0.8, 0.0, 1.0, 1.0],
+            [1.0, 1.0, 0.0, 0.8, 0.1, 1.0,   1.0, 1.0, 0.8, 1.0, 1.0, 0.1],
+            [1.0, 1.0, 0.0, 0.8, 0.1, 1.0,   1.0, 1.0, 0.8, 1.0, 1.0, 0.1],
+            [1.0, 0.1, 0.1, 1.0, 0.1, 0.1,   1.0, 0.8, 0.1, 1.0, 1.0, 0.0],
+            [1.0, 0.5, 0.1, 1.0, 0.4, 0.1,   0.1, 0.8, 0.0, 1.0, 1.0, 0.5],
+            [0.5, 0.5, 1.0, 1.0, 0.4, 0.1,   0.1, 0.8, 0.0, 0.5, 1.0, 1.0],
+            [0.5, 0.5, 1.0, 1.0, 0.4, 0.1,   0.1, 0.8, 0.0, 0.5, 1.0, 1.0],
+            [0.5, 0.5, 1.0, 1.0, 0.4, 0.8,   0.1, 0.8, 0.8, 0.5, 1.0, 1.0],
+            [0.5, 0.5, 1.0, 0.4, 0.4, 0.8,   0.4, 0.8, 0.8, 0.5, 1.0, 1.0],
+            [0.5, 0.5, 1.0, 0.4, 0.4, 0.8,   0.4, 0.8, 0.8, 0.5, 1.0, 1.0],
+            [0.5, 0.5, 1.0, 0.4, 0.4, 0.8,   0.4, 0.8, 0.8, 0.5, 1.0, 1.0],
+            [0.5, 0.5, 1.0, 0.1, 0.4, 0.8,   0.1, 0.8, 0.8, 0.5, 1.0, 1.0],
+            [0.5, 0.5, 1.0, 0.1, 0.4, 0.8,   0.1, 0.8, 0.8, 0.5, 1.0, 1.0],
+            [0.5, 0.5, 1.0, 0.1, 0.4, 0.8,   0.1, 0.8, 0.8, 0.5, 1.0, 1.0]
+        ])
         
         print(f"   Using roll sequence: {roll_sequence.shape[0]} steps × {roll_sequence.shape[1]} actuators")
         
@@ -192,6 +189,12 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
         torch.cuda.empty_cache()
         initial_memory = torch.cuda.memory_allocated(0) / 1e9
         max_gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1e9
+
+        # Optional: Get SLURM array job ID
+        job_id = int(os.environ.get("SLURM_ARRAY_TASK_ID", 0))
+
+        # You can use this to change config, seed, or output dir
+        output_tag = f"run_{job_id}"
         
         print(f"   GPU Memory - Allocated: {initial_memory:.2f}GB")
         print(f"   GPU Memory - Available: {max_gpu_memory - initial_memory:.2f}GB")
@@ -210,7 +213,7 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
             "MlpPolicy",
             env,
             verbose=1,
-            tensorboard_log=f"./sac_tensegrity_tensorboard_{config_name}/",
+            tensorboard_log=f"./sac_tensegrity_tensorboard_{config_name}_{output_tag}//",
             device=device,
             **model_params
         )
@@ -325,7 +328,7 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
         
         # Generate timestamp for unique model naming
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        save_path = f"models/gpu/sac_gpu_pretraining_{config_name}_{timestamp}"
+        save_path = f"models/gpu/sac_gpu_pretraining_{config_name}_{timestamp}_{output_tag}_{timestamp}"
         Path("models/gpu").mkdir(parents=True, exist_ok=True)
         model.save(save_path)
         
@@ -444,42 +447,37 @@ def main():
     
     gpu_memory_gb, system_ram_gb = memory_specs
     configs = gpu_optimized_configs()
+
+    
     
     # Auto-detect optimal configurations based on hardware
-    # if "5090" in gpu_name:
-    #     selected_configs = {k: v for k, v in configs.items() if "rtx5090" in k}
-    #     timesteps = 3000000  # Extended training for RTX 5090
-    #     cycles = 2000       # Massive demonstration cycles
-    #     print(f"🚀 RTX 5090 detected! Using next-gen configurations for {gpu_memory_gb:.1f}GB VRAM")
+    if "5090" in gpu_name:
+        selected_configs = {k: v for k, v in configs.items() if "rtx5090" in k}
+        timesteps = 3000000  # Extended training for RTX 5090
+        cycles = 2000       # Massive demonstration cycles
+        print(f"🚀 RTX 5090 detected! Using next-gen configurations for {gpu_memory_gb:.1f}GB VRAM")
         
-    # elif "4090" in gpu_name:
-    #     selected_configs = {k: v for k, v in configs.items() if "rtx4090" in k}
-    #     timesteps = 200000  # Standard for RTX 4090, was 200000
-    #     cycles = 2000      # Large demonstration cycles
-    #     print(f"🚀 RTX 4090 detected! Using optimized configurations for {gpu_memory_gb:.1f}GB VRAM")
+    elif "4090" in gpu_name:
+        selected_configs = {k: v for k, v in configs.items() if "rtx4090" in k}
+        timesteps = 3000000  # Standard for RTX 4090, was 200000
+        cycles = 2000      # Large demonstration cycles
+        print(f"🚀 RTX 4090 detected! Using optimized configurations for {gpu_memory_gb:.1f}GB VRAM")
         
-    # elif "2080" in gpu_name and system_ram_gb >= 24:
-    #     selected_configs = {k: v for k, v in configs.items() if "rtx2080ti_32gb" in k}
-    #     timesteps = 3000000   # Moderate for RTX 2080 Ti + 32GB RAM
-    #     cycles = 2000        # Conservative GPU memory, more system RAM
-    #     print(f"🚀 RTX 2080 Ti + 32GB RAM detected! Using enhanced configurations")
+    elif "2080" in gpu_name and system_ram_gb >= 24:
+        selected_configs = {k: v for k, v in configs.items() if "rtx2080ti_32gb" in k}
+        timesteps = 3000000   # Moderate for RTX 2080 Ti + 32GB RAM
+        cycles = 2000        # Conservative GPU memory, more system RAM
+        print(f"🚀 RTX 2080 Ti + 32GB RAM detected! Using enhanced configurations")
         
-    # else:
-    #     # Default to RTX 4090 large as requested
-    #     selected_configs = {"rtx4090_large": configs["rtx4090_large"]}
-    #     timesteps = 200000
-    #     cycles = 2000 #was 1000
-    #     print(f"⚠️  Unknown/unsupported GPU '{gpu_name}' ({gpu_memory_gb:.1f}GB)")
-    #     print(f"    Defaulting to RTX 4090 Large configuration as requested")
-    #     print(f"    WARNING: This may cause GPU OOM if your hardware has insufficient VRAM")
+    else:
+        # Default to RTX 4090 large as requested
+        selected_configs = {"rtx4090_large": configs["rtx4090_large"]}
+        timesteps = 3000000
+        cycles = 2000 #was 1000
+        print(f"⚠️  Unknown/unsupported GPU '{gpu_name}' ({gpu_memory_gb:.1f}GB)")
+        print(f"    Defaulting to RTX 4090 Large configuration as requested")
+        print(f"    WARNING: This may cause GPU OOM if your hardware has insufficient VRAM")
     
-    # Force RTX 4090 Ultra configuration only
-    selected_configs = {"rtx4090_ultra": configs["rtx4090_ultra"]}
-    timesteps = 200000  # Standard for RTX 4090
-    cycles = 2000      # Large demonstration cycles
-    print(f"🚀 Forcing RTX 4090 Ultra configuration for {gpu_memory_gb:.1f}GB VRAM")
-    print(f"   GPU detected: {gpu_name}")
-
     results = {}
     
     print(f"\n🚀 Starting GPU optimized training with {len(selected_configs)} configurations")

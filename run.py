@@ -103,7 +103,7 @@ def visualize_reward_components():
                 controls = np.array(target_lengths)
                 
                 # Calculate each reward component separately
-                rolling_quality = sim.calculate_rolling_quality_reward(robot_pos)
+                rolling_quality = sim._reward_cumulative_x_axis_rotation()
                 exploitation_penalties = sim.calculate_anti_exploit_penalties(robot_pos, controls)
                 cumulative_rotation = sim._reward_cumulative_x_axis_rotation() * 2.0
                 consistent_direction = sim._reward_consistent_rolling_direction(window_size=15) * 1.5
@@ -349,7 +349,7 @@ def run_roll_sequence():
     # ])
     # Steph trying shit
     base_sequence = np.array([
-        [1.0, 1.0, 0.1, 1.0, 1.0, 0.1,   0.1, 0.8, 0.0, 1.0, 1.0, 0.0],
+        [1.0, 1.0, 0.1, 1.0, 1.0, 0.1,   0.1, 0.8, 0.0, 1.0, 1.0, 0.0], #start 1=b,2=r,3=g
         [0.0, 1.0, 1.0, 0.0, 0.8, 0.1,   1.0, 0.1, 1.0, 1.0, 0.1, 1.0],
         [1.0, 0.1, 1.0, 1.0, 0.1, 1.0,   0.0, 0.1, 0.8, 0.0, 1.0, 1.0],
         [1.0, 1.0, 0.0, 0.8, 0.1, 1.0,   1.0, 1.0, 0.8, 1.0, 1.0, 0.1],
@@ -364,7 +364,16 @@ def run_roll_sequence():
         [0.5, 0.5, 1.0, 0.4, 0.4, 0.8,   0.4, 0.8, 0.8, 0.5, 1.0, 1.0],
         [0.5, 0.5, 1.0, 0.1, 0.4, 0.8,   0.1, 0.8, 0.8, 0.5, 1.0, 1.0],
         [0.5, 0.5, 1.0, 0.1, 0.4, 0.8,   0.1, 0.8, 0.8, 0.5, 1.0, 1.0],
-        [0.5, 0.5, 1.0, 0.1, 0.4, 0.8,   0.1, 0.8, 0.8, 0.5, 1.0, 1.0]
+        [0.5, 0.5, 1.0, 0.1, 0.4, 0.8,   0.1, 0.8, 0.8, 0.5, 1.0, 1.0], #1=g,2=b,3=r by here and stable
+        [0.5, 0.5, 1.0, 0.4, 0.4, 0.4,   0.4, 0.8, 0.4, 0.5, 1.0, 1.0],
+        [0.5, 0.5, 1.0, 0.8, 0.4, 0.2,   0.8, 0.8, 0.2, 0.5, 1.0, 1.0],
+        [1.0, 0.5, 1.0, 1.0, 0.4, 0.1,   1.0, 0.8, 0.1, 1.0, 1.0, 1.0],
+        [1.0, 0.1, 1.0, 1.0, 0.0, 0.1,   1.0, 0.0, 0.1, 1.0, 1.0, 1.0],
+        [1.0, 0.1, 1.0, 0.1, 0.6, 0.1,   0.1, 0.0, 0.6, 1.0, 0.7, 1.0],
+        [1.0, 0.1, 1.0, 0.6, 0.6, 0.1,   0.6, 0.0, 0.6, 1.0, 0.7, 1.0],
+        [1.0, 0.1, 1.0, 0.6, 0.6, 0.1,   0.6, 0.0, 0.6, 1.0, 0.7, 1.0], #1=r,2=g,3=b
+        [1.0, 0.1, 1.0, 0.6, 0.6, 0.1,   0.6, 0.0, 0.6, 1.0, 0.7, 1.0],
+        
     ])
 
     # Shuffling gait for dual tensegrity robot
@@ -400,6 +409,8 @@ def run_roll_sequence():
     xml = Path('mujoco_physics_engine/xml_models/two_3bar_new_platform_config_1.xml')
     sim = TensegrityMuJoCoSimulator(xml, controller_kp=10.0, controller_ki=0.2, controller_kd=2.0, visualize=True)
     
+    # init_viewer(sim)
+
     # Set up video capture
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     video_filename = f"roll_sequence_{timestamp}.mp4"
@@ -565,6 +576,26 @@ def run_roll_sequence():
     # # Create plots
     # create_cable_analysis_plots(time_data, target_lengths_data, actual_lengths_data, 
     #                            pid_responses_data, sequence_boundaries, output_dir, timestamp)
+
+# def init_viewer(sim):
+#     """Initialize MuJoCo viewer with proper API"""
+#     import mujoco.viewer
+    
+#     # Correct MuJoCo viewer initialization
+#     viewer = mujoco.viewer.launch_passive(
+#         sim.model, 
+#         sim.data
+#     )
+    
+#     # Configure camera for better robot visibility
+#     if viewer is not None:
+#         viewer.cam.distance = 10.0  # Zoom out to see full robot
+#         viewer.cam.elevation = -30  # Better viewing angle
+#         viewer.cam.lookat[0] = 0.0  # Center on origin
+#         viewer.cam.lookat[1] = 0.0
+#         viewer.cam.lookat[2] = 1.0  # Slightly elevated view
+    
+#     return viewer
 
 def calculate_test_reward_function(sim, controls, target_lengths, prev_pos, max_distance_from_origin, prev_imu_grav):
     # This function for testing different potential reward functions
@@ -1125,8 +1156,8 @@ if __name__ == "__main__":
     
     # Original simulation functions
     # run_single_sim()
-    # run_roll_sequence()
+    run_roll_sequence()
     # run_multi_sim()
     
     # NEW: Reward component visualization
-    visualize_reward_components()
+    # visualize_reward_components()
