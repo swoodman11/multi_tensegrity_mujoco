@@ -1,5 +1,7 @@
 from pathlib import Path
 from datetime import datetime
+import argparse
+import json
 import numpy as np
 import matplotlib.pyplot as plt
 from mujoco_physics_engine.tensegrity_mjc_simulation import *
@@ -104,10 +106,13 @@ def visualize_reward_components():
                 
                 # Calculate each reward component separately
                 rolling_quality = sim._reward_cumulative_x_axis_rotation()
-                exploitation_penalties = sim.calculate_anti_exploit_penalties(robot_pos, controls)
-                cumulative_rotation = sim._reward_cumulative_x_axis_rotation() * 2.0
-                consistent_direction = sim._reward_consistent_rolling_direction(window_size=15) * 1.5
-                distance_reward = sim.calculate_omnidirectional_distance_reward(robot_pos) * 0.3
+                # Use new penalty + reward component logging from info dict
+                control_penalty_total = info.get('control_penalty_total', 0.0)
+                # For backward naming compatibility, treat control penalty as exploitation_penalties (negative expected)
+                exploitation_penalties = control_penalty_total
+                cumulative_rotation = info.get('cumulative_rotation_reward', sim._reward_cumulative_x_axis_rotation())
+                consistent_direction = info.get('consistent_direction_reward', sim._reward_consistent_rolling_direction(window_size=15))
+                distance_reward = info.get('distance_reward', sim.calculate_omnidirectional_distance_reward(robot_pos) * 0.3)
                 
                 # Store results
                 current_step = step_idx * 20 + sub_step
@@ -277,7 +282,7 @@ def run_single_sim():
     sim.save_video(Path(output_dir, video_filename), frames=frames)
 
 
-def run_roll_sequence():
+def run_roll_sequence(sequence_json: str | None = None, repeats: int = 1, visualize: bool = True, interactive: bool = False, fast_forward: int = 0):
     """
     Simulate the tensegrity robot rolling through a predefined sequence of actions.
     Now includes plotting of target lengths, actual lengths, and PID responses.
@@ -347,34 +352,11 @@ def run_roll_sequence():
     #     [1.0, 1.0, 0.0, 0.8, 0.1, 0.0,   1.0, 1.0, 0.1, 1.0, 1.0, 0.1],
     #     [1.0, 1.0, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
     # ])
-    # Steph trying shit
-    base_sequence = np.array([
-        [1.0, 1.0, 0.1, 1.0, 1.0, 0.1,   0.1, 0.8, 0.0, 1.0, 1.0, 0.0], #start 1=b,2=r,3=g
-        [0.0, 1.0, 1.0, 0.0, 0.8, 0.1,   1.0, 0.1, 1.0, 1.0, 0.1, 1.0],
-        [1.0, 0.1, 1.0, 1.0, 0.1, 1.0,   0.0, 0.1, 0.8, 0.0, 1.0, 1.0],
-        [1.0, 1.0, 0.0, 0.8, 0.1, 1.0,   1.0, 1.0, 0.8, 1.0, 1.0, 0.1],
-        [1.0, 1.0, 0.0, 0.8, 0.1, 1.0,   1.0, 1.0, 0.8, 1.0, 1.0, 0.1],
-        [1.0, 0.1, 0.1, 1.0, 0.1, 0.1,   1.0, 0.8, 0.1, 1.0, 1.0, 0.0],
-        [1.0, 0.5, 0.1, 1.0, 0.4, 0.1,   0.1, 0.8, 0.0, 1.0, 1.0, 0.5],
-        [0.5, 0.5, 1.0, 1.0, 0.4, 0.1,   0.1, 0.8, 0.0, 0.5, 1.0, 1.0],
-        [0.5, 0.5, 1.0, 1.0, 0.4, 0.1,   0.1, 0.8, 0.0, 0.5, 1.0, 1.0],
-        [0.5, 0.5, 1.0, 1.0, 0.4, 0.8,   0.1, 0.8, 0.8, 0.5, 1.0, 1.0],
-        [0.5, 0.5, 1.0, 0.4, 0.4, 0.8,   0.4, 0.8, 0.8, 0.5, 1.0, 1.0],
-        [0.5, 0.5, 1.0, 0.4, 0.4, 0.8,   0.4, 0.8, 0.8, 0.5, 1.0, 1.0],
-        [0.5, 0.5, 1.0, 0.4, 0.4, 0.8,   0.4, 0.8, 0.8, 0.5, 1.0, 1.0],
-        [0.5, 0.5, 1.0, 0.1, 0.4, 0.8,   0.1, 0.8, 0.8, 0.5, 1.0, 1.0],
-        [0.5, 0.5, 1.0, 0.1, 0.4, 0.8,   0.1, 0.8, 0.8, 0.5, 1.0, 1.0],
-        [0.5, 0.5, 1.0, 0.1, 0.4, 0.8,   0.1, 0.8, 0.8, 0.5, 1.0, 1.0], #1=g,2=b,3=r by here and stable
-        [0.5, 0.5, 1.0, 0.4, 0.4, 0.4,   0.4, 0.8, 0.4, 0.5, 1.0, 1.0],
-        [0.5, 0.5, 1.0, 0.8, 0.4, 0.2,   0.8, 0.8, 0.2, 0.5, 1.0, 1.0],
-        [1.0, 0.5, 1.0, 1.0, 0.4, 0.1,   1.0, 0.8, 0.1, 1.0, 1.0, 1.0],
-        [1.0, 0.1, 1.0, 1.0, 0.0, 0.1,   1.0, 0.0, 0.1, 1.0, 1.0, 1.0],
-        [1.0, 0.1, 1.0, 0.1, 0.6, 0.1,   0.1, 0.0, 0.6, 1.0, 0.7, 1.0],
-        [1.0, 0.1, 1.0, 0.6, 0.6, 0.1,   0.6, 0.0, 0.6, 1.0, 0.7, 1.0],
-        [1.0, 0.1, 1.0, 0.6, 0.6, 0.1,   0.6, 0.0, 0.6, 1.0, 0.7, 1.0], #1=r,2=g,3=b
-        [1.0, 0.1, 1.0, 0.6, 0.6, 0.1,   0.6, 0.0, 0.6, 1.0, 0.7, 1.0],
-        
-    ])
+    # Load base sequence from JSON (default Steph sequence)
+    import json
+    seq_path = Path(sequence_json) if sequence_json else Path('action_sequences/steph_sequence.json')
+    with open(seq_path, 'r') as f:
+        base_sequence = np.array(json.load(f), dtype=float)
 
     # Shuffling gait for dual tensegrity robot
     # Strategy: Alternate contraction patterns between tensegrities to create shuffling motion
@@ -398,8 +380,7 @@ def run_roll_sequence():
     #     [1.0, 1.0, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
     # ])
     
-    n = 1  # Number of times to repeat the sequence
-    roll_sequence = np.tile(base_sequence, (n, 1))
+    roll_sequence = np.tile(base_sequence, (repeats, 1))
     
     # Create output directory
     output_dir = Path('sim_output')
@@ -407,7 +388,7 @@ def run_roll_sequence():
     
     # Load the XML model and create simulator
     xml = Path('mujoco_physics_engine/xml_models/two_3bar_new_platform_config_1.xml')
-    sim = TensegrityMuJoCoSimulator(xml, controller_kp=10.0, controller_ki=0.2, controller_kd=2.0, visualize=True)
+    sim = TensegrityMuJoCoSimulator(xml, controller_kp=10.0, controller_ki=0.2, controller_kd=2.0, visualize=visualize)
     
     # init_viewer(sim)
 
@@ -416,8 +397,10 @@ def run_roll_sequence():
     video_filename = f"roll_sequence_{timestamp}.mp4"
     all_frames = []
     
-    # Data collection for plotting
-    num_steps_per_sequence = 200
+    # Derive number of physics substeps per high-level action from dt.
+    # Keep semantic: hold each action for action_hold_seconds simulated seconds.
+    action_hold_seconds = 2.0  # Default preserves prior 200-step @ dt≈0.01s behavior.
+    num_steps_per_sequence = max(1, round(action_hold_seconds / sim.dt))
     total_steps = len(roll_sequence) * num_steps_per_sequence
     
     # Initialize data arrays
@@ -432,15 +415,58 @@ def run_roll_sequence():
     
     step_counter = 0
     
-    print(f"Starting simulation with {len(roll_sequence)} sequence steps, {num_steps_per_sequence} substeps each")
+    print(f"Starting simulation with {len(roll_sequence)} sequence steps, {num_steps_per_sequence} substeps each (dt={sim.dt:.6f}s => {action_hold_seconds:.2f}s/action)")
+    if fast_forward > 0:
+        print(f"Fast-forward enabled: skipping visualization for first {fast_forward} sequence steps.")
     
     # Execute each action step in the sequence
     for i, target_lengths in enumerate(roll_sequence):
-        print(f"Executing step {i+1}/{len(roll_sequence)} of rolling sequence")
+        skip_vis = fast_forward > 0 and i < fast_forward
+        # Interactive prompt (only at sequence step granularity)
+        if interactive:
+            while True:
+                user_in = input(
+                    f"[Step {i+1}/{len(roll_sequence)}] Enter=run | s=skip | a=auto rest | q=quit > "
+                ).strip().lower()
+                if user_in in ('', 'c', 'run', 'r'):
+                    # proceed with this step
+                    break
+                if user_in in ('s', 'skip'):
+                    print(f"Skipping step {i+1} (no simulation run).")
+                    sequence_boundaries.append(step_counter * sim.dt)
+                    # treat as completed without simulation
+                    break  # proceed to next step in outer loop
+                if user_in in ('a', 'auto'):
+                    print("Disabling interactive mode for remaining steps.")
+                    interactive = False
+                    break
+                if user_in in ('q', 'quit', 'x'):
+                    print("Quitting early at user request. Proceeding to plot collected data.")
+                    # Jump to plotting with data collected so far
+                    # Append boundary to mark termination point
+                    sequence_boundaries.append(step_counter * sim.dt)
+                    # Exit both loops by converting i loop to finished
+                    # Use a flag
+                    early_quit = True
+                    break
+                print("Unrecognized input. Use Enter, s, a, or q.")
+            if 'early_quit' in locals() and early_quit:
+                break
+            # If user skipped step, continue to next sequence step without simulation
+            if user_in in ('s', 'skip'):
+                continue
+        if skip_vis:
+            if i == 0:
+                print("(Fast-forwarding... no visualization until step", fast_forward + 1, ")")
+        else:
+            # First step after fast-forward boundary notification
+            if fast_forward > 0 and i == fast_forward:
+                print(f"Reached fast-forward boundary at step {i+1}; enabling visualization now.")
+            print(f"Executing step {i+1}/{len(roll_sequence)} of rolling sequence")
         sequence_boundaries.append(step_counter * sim.dt)
-        
+
         # Apply the target lengths and run simulation for multiple steps
-        frames = []
+        frames = [] if (sim.visualize and not skip_vis) else None
         
         # Reset if this is the first step (to ensure proper starting position)
         if i == 0:
@@ -533,9 +559,10 @@ def run_roll_sequence():
             pid_responses_data.append(pid_responses.copy())
             
             # Capture frame if visualization is enabled
-            if sim.visualize:
+            if sim.visualize and not skip_vis:
                 frame = sim.render()
-                frames.append(frame)
+                if frames is not None:
+                    frames.append(frame)
             
             step_counter += 1
             
@@ -545,10 +572,11 @@ def run_roll_sequence():
             # Small delay for visualization purposes
             if sim.visualize and step % 10 == 0:  # Reduce frequency of sleep to speed up
                 import time
-                time.sleep(0.001)
+                time.sleep(0.0001)
                 
         # Add the frames to our collection
-        all_frames.extend(frames)
+        if frames:
+            all_frames.extend(frames)
     
     print("Simulation completed. Generating plots...")
     
@@ -1151,13 +1179,58 @@ def run_multi_sim():
     multi_sim.parallel_run_target_lengths(target_lengths)
 
 
+def _list_available_sequences(directory: Path):
+    if not directory.exists():
+        print(f"No sequence directory found at {directory}")
+        return
+    print(f"Available action sequence JSON files in {directory}:")
+    for p in sorted(directory.glob('*.json')):
+        print(f"  - {p}")
+
+
 if __name__ == "__main__":
-    # Uncomment the function you want to run
-    
-    # Original simulation functions
-    # run_single_sim()
-    run_roll_sequence()
-    # run_multi_sim()
-    
-    # NEW: Reward component visualization
-    # visualize_reward_components()
+    parser = argparse.ArgumentParser(description="Run tensegrity roll sequence or analyses.")
+    parser.add_argument('--sequence', '-s', type=str, default=None,
+                        help='Path to JSON file with action sequence (defaults to steph_sequence.json).')
+    parser.add_argument('--repeats', '-r', type=int, default=1, help='Number of times to repeat the loaded base sequence.')
+    parser.add_argument('--no-vis', action='store_true', help='Disable visualization rendering.')
+    parser.add_argument('--list', action='store_true', help='List available JSON sequences and exit.')
+    parser.add_argument('--mode', choices=['roll','single','multi','analyze'], default='roll',
+                        help='Execution mode: roll (default), single (simple demo), multi (multiprocess), analyze (reward component viz).')
+    parser.add_argument('--interactive', '-i', action='store_true',
+                        help='Enable interactive stepping: prompt before each sequence step.')
+    parser.add_argument('--fast-forward', type=int, default=0,
+                        help='Number of initial sequence steps to simulate without visualization (still collects data).')
+    args = parser.parse_args()
+
+    seq_dir = Path('action_sequences')
+    if args.list:
+        _list_available_sequences(seq_dir)
+        raise SystemExit(0)
+
+    # Resolve sequence path if provided or default
+    seq_path = args.sequence
+    if seq_path is None:
+        # default to Steph sequence
+        seq_path = str(seq_dir / 'steph_sequence.json')
+    else:
+        # allow bare filename by searching in action_sequences
+        cand = Path(seq_path)
+        if not cand.exists():
+            alt = seq_dir / seq_path
+            if alt.exists():
+                seq_path = str(alt)
+            else:
+                print(f"ERROR: Sequence file '{seq_path}' not found (also tried '{alt}'). Use --list to see options.")
+                raise SystemExit(1)
+
+    if args.mode == 'roll':
+        run_roll_sequence(sequence_json=seq_path, repeats=args.repeats, visualize=not args.no_vis, interactive=args.interactive, fast_forward=args.fast_forward)
+    elif args.mode == 'single':
+        run_single_sim()
+    elif args.mode == 'multi':
+        run_multi_sim()
+    elif args.mode == 'analyze':
+        visualize_reward_components()
+    else:
+        print("Unknown mode.")

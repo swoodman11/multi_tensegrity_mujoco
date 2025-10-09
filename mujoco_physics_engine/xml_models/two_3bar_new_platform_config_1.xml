@@ -43,10 +43,9 @@
   </asset>
 
   <worldbody>
-    <!-- <geom name="floor" size="40 40 1" type="plane" material="grid" rgba="0.8 0.9 0.8 1"/> -->
-    <body name="tilted_floor" pos="0 0 0" euler="0.03 0.03 0">  <!-- 3 degrees X-axis tilt -->
-        <geom name="floor" size="40 40 1" type="plane" material="grid" rgba="0.8 0.9 0.8 1" friction="1.0 0.12 0.025 "/>
-    </body>
+    <!-- Ground plane: removed duplicate geom and stray closing body tag that caused XML mismatch -->
+    <geom name="floor" size="40 40 1" type="plane" material="grid" rgba="0.8 0.9 0.8 1" friction="1.0 0.12 0.025"/>
+    <!-- If you want a tilted floor, wrap it properly in a <body> ... </body> block. -->
     <camera name="camera" pos="-1.707 -9.267 38.018" quat="0.992382 0.109445 -0.00620097 -0.0562269"/>
     <camera name="front" pos="10.257 -19.949 12.477" xyaxes="0.886 0.463 0.000 -0.225 0.430 0.875"/>
     <camera name="top" pos="0.392 -0.869 53.543" quat="0.999964 0.00849908 0 0"/>
