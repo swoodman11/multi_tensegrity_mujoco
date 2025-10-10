@@ -287,98 +287,12 @@ def run_roll_sequence(sequence_json: str | None = None, repeats: int = 1, visual
     Simulate the tensegrity robot rolling through a predefined sequence of actions.
     Now includes plotting of target lengths, actual lengths, and PID responses.
     """
-    # Define the rolling sequence
-    # Testing one cable at a time - expanded for dual tensegrity (12 actuators)
-    # base_sequence = np.array([
-    #     [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],  # All extended (baseline)
-    #     [1.0, 0.2, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],  # First tensegrity, cable 2
-    #     [1.0, 1.0, 0.2, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],  # First tensegrity, cable 3
-    #     [1.0, 1.0, 1.0, 0.2, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],  # First tensegrity, cable 4
-    #     [1.0, 1.0, 1.0, 1.0, 0.2, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],  # First tensegrity, cable 5
-    #     [1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],  # First tensegrity, cable 6
-    #     [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 1.0, 1.0, 1.0, 1.0, 1.0],  # Second tensegrity, cable 1
-    #     [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 1.0, 1.0, 1.0, 1.0],  # Second tensegrity, cable 2
-    #     [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 1.0, 1.0, 1.0],  # Second tensegrity, cable 3
-    #     [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 1.0, 1.0],  # Second tensegrity, cable 4
-    #     [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 1.0],  # Second tensegrity, cable 5
-    #     [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2],   # Second tensegrity, cable 6
-    #     [0.2, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]  # First tensegrity, cable 1
-    # ])
 
-    # Quasi-static rolling gait - expanded for dual tensegrity (12 actuators)
-    # Two options:
-    # 1. Mirror pattern (same movement for both tensegrities)
-    # NOTE: This pattern is from a single 3-bar gait. It is duplicated for two robots, but doesn't work effectively.
-    # base_sequence = np.array([
-    #     [1.0, 1.0, 0.1, 1.0, 1.0, 0.1,   1.0, 1.0, 0.1, 1.0, 1.0, 0.1],  # Step 1 - both tensegrities move identically
-    #     [0.0, 1.0, 1.0, 0.0, 0.8, 0.1,   0.0, 1.0, 1.0, 0.0, 0.8, 0.1],  # Step 2
-    #     [1.0, 0.1, 1.0, 1.0, 0.1, 1.0,   1.0, 0.1, 1.0, 1.0, 0.1, 1.0],  # Step 3
-    #     [1.0, 1.0, 0.0, 0.8, 0.1, 0.0,   1.0, 1.0, 0.0, 0.8, 0.1, 0.0],  # Step 4
-    #     [0.1, 1.0, 1.0, 0.1, 1.0, 1.0,   0.1, 1.0, 1.0, 0.1, 1.0, 1.0],  # Step 5
-    #     [1.0, 0.0, 1.0, 0.1, 0.0, 0.8,   1.0, 0.0, 1.0, 0.1, 0.0, 0.8]   # Step 6
-    # ])
-
-    # # 2. Mirror and flipped pattern (same movement for both tensegrities but flipped for second tensegrity)
-    # base_sequence = np.array([
-    #     [1.0, 1.0, 0.1, 1.0, 1.0, 0.1,   0.1, 1.0, 1.0, 0.1, 1.0, 1.0], # NOTE: the second set of 6 actuators is flipped
-    #     [0.0, 1.0, 1.0, 0.0, 0.8, 0.1,   0.1, 0.8, 0.0, 1.0, 1.0, 0.0],
-    #     [1.0, 0.1, 1.0, 1.0, 0.1, 1.0,   1.0, 0.1, 1.0, 1.0, 0.1, 1.0],
-    #     [1.0, 1.0, 0.0, 0.8, 0.1, 0.0,   0.0, 0.1, 0.8, 0.0, 1.0, 1.0],
-    #     [0.1, 1.0, 1.0, 0.1, 1.0, 1.0,   1.0, 1.0, 0.1, 1.0, 1.0, 0.1],
-    #     [1.0, 0.0, 1.0, 0.1, 0.0, 0.8,   0.8, 0.0, 0.1, 1.0, 0.0, 1.0]
-    # ])
-
-    # 3. Offset and flipped pattern repeated n times (this pattern shuffle locomotes)
-    # base_sequence = np.array([
-    #     [1.0, 1.0, 0.1, 1.0, 1.0, 0.1,   0.1, 0.8, 0.0, 1.0, 1.0, 0.0],
-    #     [0.0, 1.0, 1.0, 0.0, 0.8, 0.1,   1.0, 0.1, 1.0, 1.0, 0.1, 1.0],
-    #     [1.0, 0.1, 1.0, 1.0, 0.1, 1.0,   0.0, 0.1, 0.8, 0.0, 1.0, 1.0],
-    #     [1.0, 1.0, 0.0, 0.8, 0.1, 0.0,   1.0, 1.0, 0.1, 1.0, 1.0, 0.1],
-    #     [0.1, 1.0, 1.0, 0.1, 1.0, 1.0,   0.8, 0.0, 0.1, 1.0, 0.0, 1.0],
-    #     [1.0, 0.0, 1.0, 0.1, 0.0, 0.8,   0.1, 1.0, 1.0, 0.1, 1.0, 1.0]
-    # ])
-
-    # # Testing which cables belong to the connected nodes
-    # base_sequence = np.array([
-    #     [1.0, 1.0, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-    #     [1.0, 1.0, 1.0, 1.0, 0.2, 1.0,   1.0, 0.2, 1.0, 1.0, 1.0, 1.0]
-    # ])
-
-    # # Hand designing double tensegrity gait
-    # base_sequence = np.array([
-    #     [1.0, 1.0, 0.1, 1.0, 1.0, 0.1,   0.1, 0.8, 0.0, 1.0, 1.0, 0.0],
-    #     [0.0, 1.0, 1.0, 0.0, 0.8, 0.1,   1.0, 0.1, 1.0, 1.0, 0.1, 1.0],
-    #     [1.0, 0.1, 1.0, 1.0, 0.1, 1.0,   0.0, 0.1, 0.8, 0.0, 1.0, 1.0],
-    #     [1.0, 1.0, 0.0, 0.8, 0.1, 0.0,   1.0, 1.0, 0.1, 1.0, 1.0, 0.1],
-    #     [1.0, 1.0, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
-    # ])
-    # Load base sequence from JSON (default Steph sequence)
+    # Load the rolling sequence from JSON file with the default if none provided
     import json
     seq_path = Path(sequence_json) if sequence_json else Path('action_sequences/steph_sequence.json')
     with open(seq_path, 'r') as f:
         base_sequence = np.array(json.load(f), dtype=float)
-
-    # Shuffling gait for dual tensegrity robot
-    # Strategy: Alternate contraction patterns between tensegrities to create shuffling motion
-    # First 6 actuators control first tensegrity, last 6 control second tensegrity
-    # base_sequence = np.array([
-    #     # Step 1: Both tensegrities at rest position
-    #     [1.0, 1.0, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-    #     # Step 2: First tensegrity contracts front cables, second stays extended
-    #     [0.3, 0.3, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-    #     # Step 3: First tensegrity contracts more, second starts to contract rear
-    #     [0.2, 0.2, 0.8, 0.8, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 0.3, 0.3],
-    #     # Step 4: Transition - first extends rear, second contracts front
-    #     [0.2, 0.2, 1.0, 1.0, 0.3, 0.3,   0.3, 0.3, 1.0, 1.0, 0.2, 0.2],
-    #     # Step 5: First extends, second fully contracts front
-    #     [0.8, 0.8, 1.0, 1.0, 0.8, 0.8,   0.2, 0.2, 0.8, 0.8, 0.2, 0.2],
-    #     # Step 6: Both extend to transition state
-    #     [1.0, 1.0, 1.0, 1.0, 1.0, 1.0,   0.8, 0.8, 1.0, 1.0, 0.8, 0.8],
-    #     # Step 7: Second tensegrity extends fully, first starts new cycle
-    #     [0.3, 0.3, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-    #     # Step 8: Return to rest for cycle completion
-    #     [1.0, 1.0, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
-    # ])
     
     roll_sequence = np.tile(base_sequence, (repeats, 1))
     
@@ -390,6 +304,14 @@ def run_roll_sequence(sequence_json: str | None = None, repeats: int = 1, visual
     xml = Path('mujoco_physics_engine/xml_models/two_3bar_new_platform_config_1.xml')
     sim = TensegrityMuJoCoSimulator(xml, controller_kp=10.0, controller_ki=0.2, controller_kd=2.0, visualize=visualize)
     
+    # Configure camera for better robot visibility
+    if sim.visualize and hasattr(sim, 'viewer') and sim.viewer is not None:
+        sim.viewer.cam.distance = 20.0  # Zoom out
+        sim.viewer.cam.elevation = -30  # Better viewing angle
+        sim.viewer.cam.lookat[0] = 0.0  # Center on origin
+        sim.viewer.cam.lookat[1] = 0.0
+        sim.viewer.cam.lookat[2] = 1.0  # Slightly elevated view
+
     # init_viewer(sim)
 
     # Set up video capture
@@ -399,10 +321,13 @@ def run_roll_sequence(sequence_json: str | None = None, repeats: int = 1, visual
     
     # Derive number of physics substeps per high-level action from dt.
     # Keep semantic: hold each action for action_hold_seconds simulated seconds.
-    action_hold_seconds = 2.0  # Default preserves prior 200-step @ dt≈0.01s behavior.
+    action_hold_seconds = 1.0  # Default preserves prior 200-step @ dt≈0.01s behavior.
     num_steps_per_sequence = max(1, round(action_hold_seconds / sim.dt))
     total_steps = len(roll_sequence) * num_steps_per_sequence
-    
+    print("----------------------------------")
+    print(f"Simulation dt: {sim.dt:.6f}s, steps per action: {num_steps_per_sequence}, total simulation steps: {total_steps}")
+    print("----------------------------------")
+
     # Initialize data arrays
     time_data = []
     target_lengths_data = []
@@ -593,17 +518,6 @@ def run_roll_sequence(sequence_json: str | None = None, repeats: int = 1, visual
                                       pid_responses_data, reward_data, test_reward_data, reward_components_data,
                                       sequence_boundaries, output_dir, timestamp,
                                       sim.min_cable_length, sim.max_cable_length)
-
-    # Save the video if we have frames
-    # if all_frames:
-    #     sim.save_video(Path(output_dir, video_filename), frames=all_frames)
-    #     print(f"Rolling sequence simulation completed. Video saved as {video_filename}")
-    # else:
-    #     print("No frames were captured. Check if visualization is enabled.")
-
-    # # Create plots
-    # create_cable_analysis_plots(time_data, target_lengths_data, actual_lengths_data, 
-    #                            pid_responses_data, sequence_boundaries, output_dir, timestamp)
 
 # def init_viewer(sim):
 #     """Initialize MuJoCo viewer with proper API"""
@@ -1166,18 +1080,6 @@ def create_individual_actuator_plots(time_data, target_lengths_data, actual_leng
         print("No frames were captured. Check if visualization is enabled.")
 
 
-def run_multi_sim():
-    num_sim = 3
-    xml = Path('mujoco_physics_engine/xml_models/two_3bar_new_platform_config_1.xml')
-    multi_sim = MultiProcTensegrityMujocoSimulator(num_sim, xml)
-
-    target_lengths = [
-        [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1],
-        [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1],
-        [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1],
-    ]
-    multi_sim.parallel_run_target_lengths(target_lengths)
-
 
 def _list_available_sequences(directory: Path):
     if not directory.exists():
@@ -1228,8 +1130,6 @@ if __name__ == "__main__":
         run_roll_sequence(sequence_json=seq_path, repeats=args.repeats, visualize=not args.no_vis, interactive=args.interactive, fast_forward=args.fast_forward)
     elif args.mode == 'single':
         run_single_sim()
-    elif args.mode == 'multi':
-        run_multi_sim()
     elif args.mode == 'analyze':
         visualize_reward_components()
     else:

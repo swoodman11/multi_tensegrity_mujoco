@@ -10,6 +10,10 @@ import scipy as sp
 from mujoco_physics_engine.cable_motor import DCMotor
 from mujoco_physics_engine.mujoco_simulation import AbstractMuJoCoSimulator
 from mujoco_physics_engine.pid import PID
+import mujoco
+from mujoco import viewer
+
+import glfw  # Required for Viewer
 
 def debug_print(message, filename="tensegrity_mjc_simulation.py", debug_enabled=False):
     """Print debug messages with filename prefix if debug is enabled"""
@@ -48,6 +52,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         self.cable_motors = [DCMotor(debug_enabled=self.debug_enabled) for _ in range(num_actuated_cables)]
         self.n_rods = num_rods
         self.n_cables = self.mjc_model.tendon_stiffness.shape[0]
+        self._viewer = None
         # NOTE: start here for debugging the zero inputs 09/30/2025
         # self.actuated_ids = (list(range(num_actuated_cables // 2))
         #                      + list(range(self.n_cables // 2, self.n_cables // 2 + num_actuated_cables // 2)))
@@ -56,24 +61,12 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         # Observation mode: 'tier2' (96D) or 'legacy104' (104D)
         self.obs_mode = obs_mode if obs_mode in ("tier2", "legacy104") else "tier2"
         self.obs_dim = (96 if self.obs_mode == "tier2" else 104) if obs_dim is None else obs_dim
-        # Restore previous simple viewer-based camera distance adjustment (will modify below for new attempt)
+        
         if self.visualize and hasattr(self, 'viewer') and self.viewer is not None:
-            # Adjust distance and field of view for a broader scene. Use previous baseline distance * zoom_out_factor.
-            try:
-                base_distance = 12.0
-                self.viewer.cam.distance = base_distance * max(1.0, zoom_out_factor)
-                # Slight tilt if available
-                if hasattr(self.viewer.cam, 'elevation'):
-                    self.viewer.cam.elevation = -20
-                # Widen field of view a bit (MuJoCo uses camera-specific parameters; if not available, ignore)
-                if hasattr(self.viewer.cam, 'fovy'):
-                    self.viewer.cam.fovy = min(getattr(self.viewer.cam, 'fovy', 45) * 1.15, 110)
-                self.viewer.cam.lookat[0] = 0.0
-                self.viewer.cam.lookat[1] = 0.0
-                # Keep Z look-at modestly above ground to center structure
-                self.viewer.cam.lookat[2] = 1.5
-            except Exception as e:
-                debug_print(f"Viewer camera zoom adjustment failed: {e}", "tensegrity_mjc_simulation.py", True)
+            # Make camera view bigger - increase distance to zoom out
+            self.viewer.cam.distance = 20.0
+            self.viewer.cam.lookat[0] = 0.0 #I commnented 
+
         # Tuple of cable end point of attachment sites' names
         self.cable_sites = [
             # robot 1
@@ -178,7 +171,8 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         observation : np.ndarray
         reward : float
         done : bool
-        info : dict containing detailed reward & penalty component breakdowns.
+        info : dict containing detailed reward & penalty component breakdowns,
+               plus control signals and the applied normalized target action.
         """
         ctrl_idx = 0
 
@@ -191,6 +185,17 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         # Convert target_lengths to controls in [-1, 1]
         if target_lengths is not None:
             controls = np.zeros(self.n_actuators)  # NumPy array
+            # Normalize and cache last action for observations
+            try:
+                desired_norms = np.asarray(target_lengths, dtype=float)
+            except Exception:
+                desired_norms = np.array(list(target_lengths), dtype=float)
+            # Enforce [0,1] without raising to keep sim running
+            desired_norms = np.clip(desired_norms, 0.0, 1.0)
+            # Update previous action buffer used by observations
+            if hasattr(self, 'prev_action'):
+                self.prev_action = desired_norms.astype(np.float32)
+            # Legacy loop structure retained but single execution due to early return below
             for i in range(len(target_lengths)):
                 lengths = target_lengths[i]
                 rest_length = self.mjc_model.tendon_lengthspring[self.actuated_ids[i], 0]
@@ -201,7 +206,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
                 if target_lengths is not None:
                     controls = np.zeros(self.n_actuators, dtype=float)
                     for i in range(min(len(target_lengths), self.n_actuators)):
-                        desired_norm = float(target_lengths[i])
+                        desired_norm = float(desired_norms[i])
                         rest_length = self.mjc_model.tendon_lengthspring[self.actuated_ids[i], 0]
                         s0 = self.mjc_data.sensor(f"pos_{self.cable_sites[self.actuated_ids[i]][0]}").data
                         s1 = self.mjc_data.sensor(f"pos_{self.cable_sites[self.actuated_ids[i]][1]}").data
@@ -273,12 +278,24 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
 
                 observation = self.get_observation()
                 done = False
+                # Optional diagnostics
+                try:
+                    actuated_lengths = self._get_actuated_cable_lengths()
+                    rest_lengths = np.array([self.mjc_model.tendon_lengthspring[t, 0] for t in self.actuated_ids], dtype=np.float32)
+                except Exception:
+                    actuated_lengths = None
+                    rest_lengths = None
+
                 info = {
                     'reward_components': reward_components,
                     'penalty_components': penalty_components,
                     **reward_components,
                     **penalty_components,
                     'control_penalty_total': control_penalty_value,
+                    'controls': controls.copy(),               # PID control signals [-1,1]
+                    'action': desired_norms.copy(),            # applied normalized targets [0,1]
+                    'actuated_lengths': actuated_lengths,      # current measured cable lengths (m)
+                    'rest_lengths': rest_lengths,              # tendon rest lengths after motor update (m)
                     'step_count': self.step_count,
                 }
                 return observation, reward, done, info
@@ -658,53 +675,83 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         end_pts = np.vstack(end_pts)
         return end_pts
     
-    def render(self, mode='human', width=None, height=None):
-        """Render the simulation"""
-        try:
-            # Import here to avoid issues
-            import mujoco
+    # def render(self, mode='human', width=None, height=None):
+    #     """Render the simulation"""
+    #     try:
+    #         # Import here to avoid issues
+    #         import mujoco
 
-            # if self.viewer is not None:
-            #     # Configure camera for bigger view
-            #     self.viewer.cam.distance = 15.0   # Zoom out significantly  
-            #     self.viewer.cam.elevation = -25   # Better viewing angle
-            #     self.viewer.cam.lookat[0] = 0.0   # Center on robot
-            #     self.viewer.cam.lookat[1] = 0.0
-            #     self.viewer.cam.lookat[2] = 2.0   # Elevated view
+    #         # if self.viewer is not None:
+    #         #     # Configure camera for bigger view
+    #         #     self.viewer.cam.distance = 15.0   # Zoom out significantly  
+    #         #     self.viewer.cam.elevation = -25   # Better viewing angle
+    #         #     self.viewer.cam.lookat[0] = 0.0   # Center on robot
+    #         #     self.viewer.cam.lookat[1] = 0.0
+    #         #     self.viewer.cam.lookat[2] = 2.0   # Elevated view
             
-            # Use parent class renderer if available, otherwise create one
-            if hasattr(self, 'renderer') and self.renderer is not None:
-                # Use the properly configured renderer from parent class
-                self.renderer.update_scene(self.mjc_data)
-                frame = self.renderer.render()
+    #         # Use parent class renderer if available, otherwise create one
+    #         if hasattr(self, 'renderer') and self.renderer is not None:
+    #             # Use the properly configured renderer from parent class
+    #             self.renderer.update_scene(self.mjc_data)
+    #             frame = self.renderer.render()
                 
 
-            else:
-                # Fallback: create renderer if it doesn't exist
-                if not hasattr(self, '_renderer'):
-                    # Use provided dimensions or defaults
-                    if width is None or height is None:
-                        width = 1800
-                        height = 1800
-                    self._renderer = mujoco.Renderer(self.mjc_model, height, width)
+    #         else:
+    #             # Fallback: create renderer if it doesn't exist
+    #             if not hasattr(self, '_renderer'):
+    #                 # Use provided dimensions or defaults
+    #                 if width is None or height is None:
+    #                     width = 1800
+    #                     height = 1800
+    #                 self._renderer = mujoco.Renderer(self.mjc_model, height, width)
                 
-                # Update scene and render
-                self._renderer.update_scene(self.mjc_data)
-                frame = self._renderer.render()
+    #             # Update scene and render
+    #             self._renderer.update_scene(self.mjc_data)
+    #             frame = self._renderer.render()
             
-            if mode == 'human':
-                import cv2
-                # Convert RGB to BGR for OpenCV display
-                frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-                cv2.imshow('Tensegrity Robot', frame_bgr)
-                cv2.waitKey(1)
+    #         if mode == 'human':
+    #             import cv2
+    #             # Convert RGB to BGR for OpenCV display
+    #             frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+    #             cv2.imshow('Tensegrity Robot', frame_bgr)
+    #             cv2.waitKey(1)
             
-            return frame
+    #         return frame
             
-        except Exception as e:
-            debug_print(f"Rendering failed: {e}", "tensegrity_mjc_simulation.py", self.debug_enabled)
+    #     except Exception as e:
+    #         debug_print(f"Rendering failed: {e}", "tensegrity_mjc_simulation.py", self.debug_enabled)
+    #         return None
+
+    #new render 
+    def render(self, mode='human', **kwargs):
+        if not self.visualize:
             return None
 
+        # Lazy-load viewer
+        if self._viewer is None:
+            try:
+                from mujoco import viewer
+                self._viewer = viewer.launch_passive(self.mjc_model, self.mjc_data)
+            except Exception as e:
+                print("[ERROR] Failed to launch viewer:", e)
+                return None
+
+        try:
+            # Optionally update camera to track robot
+            end_pts = self.get_endpts()
+            robot_pos = end_pts.mean(axis=0)
+            self._viewer.cam.lookat[:] = robot_pos
+            self._viewer.cam.distance = 14.0
+            self._viewer.cam.elevation = -25
+            self._viewer.cam.azimuth = 90
+
+            # Update scene
+            self._viewer.sync()
+            self._viewer.render()
+        except Exception as e:
+            pass
+            # print("[ERROR] Rendering failed:", e)
+    
     def close(self):
         """Close renderer and cleanup"""
         try:
