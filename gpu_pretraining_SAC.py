@@ -482,7 +482,7 @@ def main():
     
     # Force RTX 4090 Ultra configuration only
     selected_configs = {"rtx4090_ultra": configs["rtx4090_ultra"]}
-    timesteps = 200000  # Standard for RTX 4090
+    timesteps = 2000000  # Standard for RTX 4090
     cycles = 2000      # Large demonstration cycles
     print(f"🚀 Forcing RTX 4090 Ultra configuration for {gpu_memory_gb:.1f}GB VRAM")
     print(f"   GPU detected: {gpu_name}")
