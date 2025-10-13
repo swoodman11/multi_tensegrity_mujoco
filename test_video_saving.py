@@ -14,7 +14,7 @@ def test_video_saving():
     
     # Load the XML model and create simulator
     xml = Path('mujoco_physics_engine/xml_models/two_3bar_new_platform_config_1.xml')
-    sim = TensegrityMuJoCoSimulator(xml, visualize=True)
+    sim = TensegrityMuJoCoSimulator(xml, visualize=False)
     
     # Run a short simulation and collect frames
     frames = []
@@ -24,8 +24,9 @@ def test_video_saving():
     for i in range(100):  # Just 100 steps for quick test
         obs, reward, done, info = sim.sim_step(target_lengths)
         
-        if sim.visualize:
-            frame = sim.render()
+        # Always use offscreen frame rendering for video saving
+        frame = sim.render_frame()
+        if frame is not None:
             frames.append(frame)
         
         if i % 20 == 0:

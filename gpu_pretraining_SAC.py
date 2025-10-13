@@ -191,8 +191,8 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
         print(f"   Roll sequence generation completed in {timing_breakdown['Roll Sequence Generation']:.2f} seconds")
         print(f"   Generated {len(trajectory['observations'])} demonstration samples")
         
-        # 3. RTX 4090-optimized PPO model - leveraging full GPU power
-        print("\n3️⃣ PPO Model Initialization...")
+        # 3. SAC Model Initialization
+        print("\n3️⃣ SAC Model Initialization...")
         start_time = time.time()
         
         # Monitor GPU memory
@@ -242,7 +242,7 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
         print(f"   Network architecture: {model_params['policy_kwargs']['net_arch']}")
         
         timing_breakdown['Model Initialization'] = time.time() - start_time
-        print(f"   ✅ PPO model initialization completed ({timing_breakdown['Model Initialization']:.2f}s)")
+        print(f"   ✅ SAC model initialization completed ({timing_breakdown['Model Initialization']:.2f}s)")
         
         # 4. GPU-accelerated behavioral cloning
         print("\n4️⃣ GPU-Accelerated Behavioral Cloning...")
@@ -272,8 +272,8 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
                 obs_tensor = torch.FloatTensor(batch_obs).to(device)
                 action_tensor = torch.FloatTensor(batch_actions).to(device)
                 
-                with torch.no_grad():
-                    actions_pred = model.policy(obs_tensor) # was actions_pred, _, _ = model.policy(obs_tensor)
+                # Enable gradients during BC so the loss can backpropagate into the policy
+                actions_pred = model.policy(obs_tensor)  # was wrapped in torch.no_grad(); ensure grad flows for BC
                 
                 loss = torch.nn.functional.mse_loss(actions_pred, action_tensor)
                 epoch_loss += loss.item()
@@ -343,7 +343,7 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
         # Print comprehensive timing summary
         total_time = sum(timing_breakdown.values())
         print(f"\n{'='*60}")
-        print(f"🎯 RTX 4090 TRAINING SUMMARY - {config_name}")
+        print(f"🎯 SAC TRAINING SUMMARY - {config_name}")
         print(f"{'='*60}")
         for phase, duration in timing_breakdown.items():
             percentage = (duration / total_time) * 100
@@ -400,22 +400,24 @@ def gpu_optimized_configs():
             )
         },
         "rtx2080ti_32gb_balanced": {
-            "learning_rate": 3e-4, #was 2e-4
-            "batch_size": 2048,
-            "gamma": 0.999,
-            "ent_coef": 0.1, #was 0.01
+            # Balanced config for 11GB VRAM + 32GB RAM, good throughput without OOM
+            "learning_rate": 3e-4,
+            "batch_size": 512,
+            "gamma": 0.995,
+            "ent_coef": 0.05,
             "policy_kwargs": dict(
-                net_arch=[2048, 1024, 512, 256],
+                net_arch=[512, 512, 256],
                 activation_fn=torch.nn.ReLU
             )
         },
         "rtx2080ti_32gb_efficient": {
-            "learning_rate": 3e-4, #was 2e-4
-            "batch_size": 2048,
-            "gamma": 0.999,
-            "ent_coef": 0.1, #was 0.01
+            # Faster training wall-clock; smaller nets and batches
+            "learning_rate": 4e-4,
+            "batch_size": 384,
+            "gamma": 0.99,
+            "ent_coef": 0.05,
             "policy_kwargs": dict(
-                net_arch=[2048, 1024, 512, 256],
+                net_arch=[256, 256, 128],
                 activation_fn=torch.nn.ReLU
             )
         },
@@ -480,12 +482,34 @@ def main():
     #     print(f"    Defaulting to RTX 4090 Large configuration as requested")
     #     print(f"    WARNING: This may cause GPU OOM if your hardware has insufficient VRAM")
     
-    # Force RTX 4090 Ultra configuration only
-    selected_configs = {"rtx4090_ultra": configs["rtx4090_ultra"]}
-    timesteps = 2000000  # Standard for RTX 4090
-    cycles = 2000      # Large demonstration cycles
-    print(f"🚀 Forcing RTX 4090 Ultra configuration for {gpu_memory_gb:.1f}GB VRAM")
-    print(f"   GPU detected: {gpu_name}")
+    # Auto-detect optimal configurations based on hardware
+    if "5090" in gpu_name:
+        selected_configs = {k: v for k, v in configs.items() if "rtx5090" in k}
+        timesteps = 3000000  # Extended training for RTX 5090
+        cycles = 2000       # Massive demonstration cycles
+        print(f"🚀 RTX 5090 detected! Using next-gen configurations for {gpu_memory_gb:.1f}GB VRAM")
+        
+    elif "4090" in gpu_name:
+        selected_configs = {k: v for k, v in configs.items() if "rtx4090" in k}
+        timesteps = 200000  # Standard for RTX 4090, was 200000
+        cycles = 2000      # Large demonstration cycles
+        print(f"🚀 RTX 4090 detected! Using optimized configurations for {gpu_memory_gb:.1f}GB VRAM")
+        
+    elif "2080" in gpu_name and system_ram_gb >= 24:
+        # Favor faster wall-clock with 2M steps; use the efficient config only
+        selected_configs = {"rtx2080ti_32gb_efficient": configs["rtx2080ti_32gb_efficient"]}
+        timesteps = 2_500_000
+        cycles = 10  # fewer demo cycles to cut pretraining time
+        print(f"🚀 RTX 2080 Ti + 32GB RAM detected! Using efficient configuration for ~2M steps")
+        
+    else:
+        # Default to RTX 4090 large as requested
+        selected_configs = {"rtx4090_large": configs["rtx4090_large"]}
+        timesteps = 200000
+        cycles = 2000 #was 1000
+        print(f"⚠️  Unknown/unsupported GPU '{gpu_name}' ({gpu_memory_gb:.1f}GB)")
+        print(f"    Defaulting to RTX 4090 Large configuration as requested")
+        print(f"    WARNING: This may cause GPU OOM if your hardware has insufficient VRAM")
 
     results = {}
     

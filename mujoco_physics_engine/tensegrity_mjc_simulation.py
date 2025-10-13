@@ -164,6 +164,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         Takes a single simulation step given target_lengths from RL policy.
         """
         ctrl_idx = 0
+        controls = None
 
         # NOTE: double check that target_lengths is in [0, 1] range
 
@@ -254,10 +255,6 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         # Get end points for locomotion reward
         end_pts = self.get_endpts()
         robot_pos = end_pts.mean(axis=0)  # Use the mean of end points as the robot's position
-        
-        # self.render(mode='human')
-        
-
 
         # Calculate forward velocity reward
         velocity_reward = 0.0
@@ -277,10 +274,9 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
             if forward_velocity > 0:
                 velocity_reward += forward_velocity # Additional reward for forward movement
         
-        # Add distance-based reward (total distance from origin)
-        distance_reward = self.calculate_omnidirectional_distance_reward(robot_pos)
+        # Distance-based reward removed (avoid camping far from origin)
 
-        penalties = self.calculate_anti_exploit_penalties(robot_pos, controls) #0
+        penalties = self.calculate_anti_exploit_penalties(robot_pos, controls) * 0.0
 
 
         # Notes with Jue 10/03/2025:
@@ -437,6 +433,176 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         #     self.prev_imu_grav = current_imu_grav.copy()
         #     self.rolling_direction_history = []
 
+        # Endpoint Height Reward: anti-glide via turnover, duty cycle, and lift transitions
+        end_pts_z = end_pts[:, 2]
+        
+        # Ground/contact and lift thresholds (with hysteresis) and hover band (meters)
+        z_g_enter, z_g_exit = 0.06, 0.07  # contact hysteresis (enter <= 6cm, exit >= 7cm)
+        z_hover = 0.03                    # 3 cm: penalize skating just above ground
+        z_lift_enter, z_lift_exit = 0.10, 0.09  # lift hysteresis (enter >= 10cm, exit <= 9cm)
+        
+        # Contact mask with hysteresis
+        if not hasattr(self, 'ground_state'):
+            self.ground_state = np.zeros_like(end_pts_z, dtype=bool)
+        prev_ground_state = self.ground_state
+        # Update rule: if grounded, remain until z >= exit; if not grounded, enter when z <= enter
+        ground_mask = np.where(prev_ground_state,
+                               ~(end_pts_z >= z_g_exit),
+                               (end_pts_z <= z_g_enter))
+        self.ground_state = ground_mask
+        num_ground = int(np.sum(ground_mask))
+        
+        # Lift mask with hysteresis (reuse across terms)
+        if not hasattr(self, 'lift_state'):
+            self.lift_state = np.zeros_like(end_pts_z, dtype=bool)
+        prev_lift_state = self.lift_state
+        lifted_mask = np.where(prev_lift_state,
+                               ~(end_pts_z <= z_lift_exit),
+                               (end_pts_z >= z_lift_enter))
+        self.lift_state = lifted_mask
+        
+        # 1) Contact count penalty outside widened [2,6] band
+        d_below = max(0, 2 - num_ground)
+        d_above = max(0, num_ground - 6)
+        contact_count_penalty = -0.25 * (d_below + d_above)
+        # Clip to avoid runaway negatives
+        contact_count_penalty = max(contact_count_penalty, -2.0)
+        
+        # 2) Penalize hover/skating band strongly, but clamp to prevent spikes
+        hover_mask = (end_pts_z > 0.0) & (end_pts_z < z_hover)
+        hover_count = int(np.sum(hover_mask))
+        hover_cap = 4  # cap per-step penalty impact
+        hover_term = -float(min(hover_count, hover_cap))
+        
+        # 3) Reward turnover: change in which endpoints are grounded
+        if not hasattr(self, 'prev_ground_mask'):
+            self.prev_ground_mask = ground_mask.copy()
+        turnover = np.sum(ground_mask ^ self.prev_ground_mask)
+        self.prev_ground_mask = ground_mask.copy()
+        
+        # 4) Per-endpoint duty cycle toward ~50% grounded over time
+        if not hasattr(self, 'ground_duty_ema'):
+            self.ground_duty_ema = np.zeros_like(end_pts_z, dtype=np.float32)
+        ema_alpha = 0.05  # smoothing
+        self.ground_duty_ema = (1.0 - ema_alpha) * self.ground_duty_ema + ema_alpha * ground_mask.astype(np.float32)
+        # Reward being near 0.5 (penalize always-on or always-off)
+        duty_score = -np.sum((self.ground_duty_ema - 0.5) ** 2)
+
+        # 4b) Per-endpoint lifted duty cycle toward ~50% (discourage always-in-air)
+        if not hasattr(self, 'lifted_duty_ema'):
+            self.lifted_duty_ema = np.zeros_like(end_pts_z, dtype=np.float32)
+        self.lifted_duty_ema = (1.0 - ema_alpha) * self.lifted_duty_ema + ema_alpha * lifted_mask.astype(np.float32)
+        lifted_duty_score = -np.sum((self.lifted_duty_ema - 0.5) ** 2)
+        
+        # 5) Lift transitions bonus: reward lifting events, small penalty for drops
+        if not hasattr(self, 'prev_lifted_mask'):
+            self.prev_lifted_mask = lifted_mask.copy()
+        lift_ups = np.sum(np.logical_and(lifted_mask, ~self.prev_lifted_mask))
+        lift_downs = np.sum(np.logical_and(~lifted_mask, self.prev_lifted_mask))
+        self.prev_lifted_mask = lifted_mask.copy()
+        # Reward lift-ups; no drop penalty (hysteresis prevents flicker)
+        lift_transition_reward = lift_ups
+        
+        # Combine (hover penalty will be added later with gating)
+        endpoint_height_reward = (
+            1.0 * contact_count_penalty +   # soften penalty to not block motion
+            6.0 * turnover +                # stronger push to change feet
+            0.5 * duty_score +              # lighter regularization
+            1.0 * lifted_duty_score +       # discourage keeping the same ends always lifted
+            6.0 * lift_transition_reward    # stronger reward for lifting events
+        )
+        endpoint_height_reward = float(np.clip(endpoint_height_reward, -50.0, 50.0))
+
+        # Option 2: Lifted centroid XY movement (no contact gating, any direction)
+        lifted_centroid_xy_reward = 0.0
+        try:
+            if np.any(lifted_mask):
+                lifted_xy = end_pts[lifted_mask][:, :2]
+                centroid_xy = lifted_xy.mean(axis=0)
+                if hasattr(self, 'prev_lifted_centroid_xy') and (self.prev_lifted_centroid_xy is not None):
+                    centroid_disp = float(np.linalg.norm(centroid_xy - self.prev_lifted_centroid_xy))
+                    # Reward movement magnitude in any direction; allow changes in direction naturally
+                    lifted_centroid_xy_reward = centroid_disp
+                # Update centroid memory when we have lifted points
+                self.prev_lifted_centroid_xy = centroid_xy.copy()
+            else:
+                # Reset memory when none lifted to avoid spurious large jumps later
+                self.prev_lifted_centroid_xy = None
+        except Exception:
+            # Be robust to any numerical/sensor hiccups
+            lifted_centroid_xy_reward = 0.0
+
+        # Continuous movement: per-step COM XY progress (direction-agnostic)
+        com_step_progress = 0.0
+        com_step_dist = 0.0
+        if hasattr(self, 'prev_pos') and self.prev_pos is not None:
+            com_step_dist = float(np.linalg.norm(robot_pos[:2] - self.prev_pos[:2]))
+            com_step_progress = float(np.tanh(5.0 * com_step_dist))  # saturate for stability
+
+        # Grounded centroid XY movement: encourages shuffling by moving points in contact
+        grounded_centroid_xy_reward = 0.0
+        try:
+            if np.any(ground_mask):
+                grounded_xy = end_pts[ground_mask][:, :2]
+                g_centroid = grounded_xy.mean(axis=0)
+                if hasattr(self, 'prev_grounded_centroid_xy') and (self.prev_grounded_centroid_xy is not None):
+                    g_disp = float(np.linalg.norm(g_centroid - self.prev_grounded_centroid_xy))
+                    grounded_centroid_xy_reward = g_disp
+                self.prev_grounded_centroid_xy = g_centroid.copy()
+            else:
+                self.prev_grounded_centroid_xy = None
+        except Exception:
+            grounded_centroid_xy_reward = 0.0
+
+        # Stagnation penalty: penalize sustained very low COM speed
+        if not hasattr(self, 'low_speed_hist'):
+            self.low_speed_hist = []
+        xy_speed_for_stall = (com_step_dist / self.dt) if (hasattr(self, 'prev_pos') and self.prev_pos is not None) else 0.0
+        self.low_speed_hist.append(xy_speed_for_stall < 0.01)  # threshold m/s; tune to your scale
+        if len(self.low_speed_hist) > 15:
+            self.low_speed_hist.pop(0)
+        stall_ratio = float(np.mean(self.low_speed_hist)) if len(self.low_speed_hist) > 0 else 0.0
+        # Softer baseline stall penalty ramped by streak length
+        if not hasattr(self, 'stall_streak'):
+            self.stall_streak = 0
+        self.stall_streak = self.stall_streak + 1 if (xy_speed_for_stall < 0.01) else 0
+        ramp = float(1.0 - np.exp(-0.1 * self.stall_streak))  # 0 -> 1 with streak
+        stall_penalty = -4.0 * stall_ratio * (0.5 + 0.5 * ramp)
+        # Clip stall penalty and reset on positive motion or switching
+        if (com_step_progress >= 0.02) or (turnover > 0) or (lift_transition_reward > 0):
+            self.stall_streak = 0
+            ramp = 0.0
+        stall_penalty = max(stall_penalty, -0.5)
+
+        # Resume bonus: if COM speed exceeds a slightly higher threshold for a few steps, give a small kick
+        if not hasattr(self, 'high_speed_hist'):
+            self.high_speed_hist = []
+        self.high_speed_hist.append(xy_speed_for_stall >= 0.02)
+        if len(self.high_speed_hist) > 5:
+            self.high_speed_hist.pop(0)
+        resume_bonus = 0.0
+        if len(self.high_speed_hist) >= 3 and all(self.high_speed_hist[-3:]):
+            resume_bonus = 2.0
+
+        # Track lifted streaks (consecutive steps in air) to discourage long dwells
+        if not hasattr(self, 'lift_streaks'):
+            self.lift_streaks = np.zeros_like(end_pts_z, dtype=np.int32)
+        self.lift_streaks = np.where(lifted_mask, self.lift_streaks + 1, 0)
+
+        # Lifted swing path-length per endpoint (promote aerial strokes), with dwell decay
+        if not hasattr(self, 'prev_end_pts'):
+            self.prev_end_pts = end_pts.copy()
+        step_xy_all = np.linalg.norm(end_pts[:, :2] - self.prev_end_pts[:, :2], axis=1)
+        # Decay swing reward after a short warmup of being lifted
+        warmup, alpha_decay = 6, 0.05
+        dwell_decay = np.exp(-alpha_decay * np.maximum(0, self.lift_streaks - warmup)).astype(np.float32)
+        lifted_step_lengths = step_xy_all * lifted_mask.astype(np.float32) * dwell_decay
+        lifted_swing_reward = float(np.sum(np.tanh(5.0 * lifted_step_lengths)))
+        # Additional small dwell penalty beyond a threshold
+        dwell_thresh = 12
+        lift_dwell_penalty = -0.02 * float(np.sum(np.maximum(0, self.lift_streaks - dwell_thresh)))
+        lift_dwell_penalty = max(lift_dwell_penalty, -1.0)
+        self.prev_end_pts = end_pts.copy()
 
         imu_x_rotation_reward = self._reward_x_axis_rotation()
 
@@ -472,8 +638,39 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         # reward = (velocity_reward + distance_reward + penalties*1.0 + 
         #   cumulative_rotation_reward + consistent_direction_reward + displacement_progress_reward)
         
-        reward = (penalties*1.0 + 
-          cumulative_rotation_reward + consistent_direction_reward + displacement_progress_reward)
+        # reward = (penalties*1.0 + 
+        #   cumulative_rotation_reward + consistent_direction_reward + displacement_progress_reward)
+        # Compose final reward (remove total distance reward; emphasize continuous progress)
+        lifted_centroid_xy_reward_weight = 5.0
+        grounded_centroid_xy_reward_weight = 14.0
+        # Glide-specific hover penalty gating: require sustained stall and few lifts
+        lifted_count = int(np.sum(lifted_mask))
+        hover_weight = 0.0 if (self.stall_streak < 5 or lifted_count >= 2) else 3.0
+        
+        # Action smoothing penalty to reduce jitter-glide
+        action_smooth_penalty = 0.0
+        if controls is not None:
+            if hasattr(self, 'prev_controls') and self.prev_controls is not None:
+                try:
+                    action_smooth_penalty = -0.05 * float(np.sum(np.abs(controls - self.prev_controls)))
+                except Exception:
+                    action_smooth_penalty = 0.0
+            self.prev_controls = controls.copy()
+        action_smooth_penalty = max(action_smooth_penalty, -1.0)
+        reward_raw = (
+            endpoint_height_reward
+            + lifted_centroid_xy_reward_weight * lifted_centroid_xy_reward
+            + grounded_centroid_xy_reward_weight * grounded_centroid_xy_reward
+            + 24.0 * com_step_progress
+            + 7.0 * lifted_swing_reward
+            + stall_penalty
+            + resume_bonus
+            + lift_dwell_penalty
+            + hover_weight * hover_term
+            + action_smooth_penalty
+        )
+        # Final reward clipping to keep critic stable
+        reward = float(np.clip(reward_raw, -40.0, 40.0))
         
         # # Calculate total forward distance reward
         # if hasattr(self, 'prev_pos') and self.prev_pos is not None:
@@ -486,7 +683,26 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         observation = self.get_observation()
         
         done = False
-        info = {}
+        # Detailed breakdown for debugging
+        info = {
+            'endpoint_height_reward': endpoint_height_reward,
+            'contact_count_penalty': float(contact_count_penalty),
+            'turnover': float(turnover),
+            'duty_score': float(duty_score),
+            'lifted_duty_score': float(lifted_duty_score),
+            'hover_count': float(hover_count),
+            'hover_term': float(hover_term),
+            'lift_transition_reward': float(lift_transition_reward),
+            'lifted_centroid_xy_reward': float(lifted_centroid_xy_reward),
+            'grounded_centroid_xy_reward': float(grounded_centroid_xy_reward),
+            'com_step_progress': float(com_step_progress),
+            'lifted_swing_reward': float(lifted_swing_reward),
+            'stall_penalty': float(stall_penalty),
+            'resume_bonus': float(resume_bonus),
+            'lift_dwell_penalty': float(lift_dwell_penalty),
+            'lift_streak_mean': float(np.mean(self.lift_streaks)),
+            'hover_weight_applied': float(hover_weight)
+        }
         
         return observation, reward, done, info
 
@@ -706,13 +922,11 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         # Reward for reaching new maximum distances
         exploration_reward = 0.0
         if xy_distance_from_origin > self.max_distance_from_origin:
-            exploration_reward = (xy_distance_from_origin - self.max_distance_from_origin) * 1000.0
+            exploration_reward = (xy_distance_from_origin - self.max_distance_from_origin) * 100.0
             self.max_distance_from_origin = xy_distance_from_origin
         
-        # Base distance reward (encourages staying away from origin)
-        base_distance_reward = xy_distance_from_origin
-
-        return exploration_reward + 0.0 * base_distance_reward 
+        # Return exploration spikes only; no steady-state distance term
+        return exploration_reward 
 
     def get_endpts(self):
         # Get end point xyz coordinates
@@ -840,12 +1054,6 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         """Penalties to prevent common exploitation behaviors"""
         penalties = 0.0
         
-        # 1. Prevent excessive bouncing (z-axis exploitation)
-        # if hasattr(self, 'prev_pos') and self.prev_pos is not None:
-        #     z_velocity = abs((robot_pos[2] - self.prev_pos[2]) / self.dt)
-        #     if z_velocity > 1.0:  # Too much vertical movement
-        #         penalties -= z_velocity * 5.0
-        
         # 2. Prevent rapid oscillations in controls
         if hasattr(self, 'prev_controls'):
             control_change = np.sum(np.abs(controls - self.prev_controls)) #make this store multiple steps
@@ -853,20 +1061,6 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
                 penalties -= control_change * 50.0 #increasing this, was 2
         self.prev_controls = controls.copy()
         
-        # 3. Energy efficiency penalty
-        # energy_cost = np.sum(np.abs(controls)) * 0.01
-        # penalties -= energy_cost
-        
-        # 4. FIX: Use correct body name for stability check
-        # Choose one of the robot bodies (e.g., t1_r01) for orientation check
-        # try:
-        #     platform_quat = self.mjc_data.body("t1_r01").xquat  # Use actual body name
-        #     tilt_penalty = abs(platform_quat[1]) + abs(platform_quat[2])  # Penalize roll/pitch
-        #     penalties -= tilt_penalty * 10.0
-        # except KeyError:
-        #     # Fallback: skip tilt penalty if body not found
-        #     pass
-
         penalties = penalties # * 0.1
 
         return penalties

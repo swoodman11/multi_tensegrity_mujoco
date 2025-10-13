@@ -464,9 +464,10 @@ for step in range(2000):  # Max steps per episode
     
     # Collect frames for video saving (if enabled)
     if args.save_video:
-        # Force rendering to get frames even if visualization is disabled
-        frame = env.sim.render()
-        video_frames.append(frame)
+        # Use offscreen renderer to get frames even when visualization is disabled
+        frame = env.sim.render_frame()
+        if frame is not None:
+            video_frames.append(frame)
     
     # Print progress every 50 steps
     if step % 50 == 0:

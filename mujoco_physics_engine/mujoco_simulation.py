@@ -21,12 +21,15 @@ class AbstractMuJoCoSimulator:
     def __init__(self,
                  xml_path: Path,
                  visualize: bool = False,
-                 render_size: (int, int) = (480, 640),
+                 render_size: tuple[int, int] = (480, 640),
                  render_fps: int = 50):
         self.xml_path = xml_path
         self.visualize = visualize
         self.mjc_model = self._load_model_from_xml(xml_path)
         self.mjc_data = mujoco.MjData(self.mjc_model)
+        # Store render configuration and lazy-create renderer when needed
+        self._render_size = render_size
+        self.render_fps = render_fps
         self.renderer = mujoco.Renderer(self.mjc_model, render_size[0], render_size[1]) if visualize else None
         self.render_fps = render_fps
         self.states = []
@@ -36,6 +39,13 @@ class AbstractMuJoCoSimulator:
     def reset(self):
         self.mjc_model = self._load_model_from_xml(self.xml_path)
         self.mjc_data = mujoco.MjData(self.mjc_model)
+        # Recreate renderer if it already exists to bind to the new model
+        if self.renderer is not None:
+            try:
+                self.renderer = mujoco.Renderer(self.mjc_model, self._render_size[0], self._render_size[1])
+            except Exception:
+                # If recreation fails, drop renderer to avoid stale references
+                self.renderer = None
 
     def _load_model_from_xml(self, xml_path: Path) -> mujoco.MjModel:
         # Convert string to Path object if needed
@@ -51,13 +61,31 @@ class AbstractMuJoCoSimulator:
         mujoco.mj_forward(self.mjc_model, self.mjc_data)
 
     def render_frame(self, view='camera'):
-        self.renderer.update_scene(self.mjc_data, view)
-        frame = self.renderer.render().copy()
-        return frame
+        """Render a single RGB frame as a numpy array without requiring a visible viewer.
+
+        Lazily creates a headless renderer if needed, so this works even when
+        visualize=False (useful for --no-vis + --save-video runs).
+        """
+        try:
+            if self.renderer is None:
+                # Lazy-create a headless renderer
+                self.renderer = mujoco.Renderer(self.mjc_model, self._render_size[0], self._render_size[1])
+            self.renderer.update_scene(self.mjc_data, view)
+            frame = self.renderer.render()
+            # Some backends already return uint8; standardize to copy to detach buffer
+            return frame.copy() if hasattr(frame, 'copy') else frame
+        except Exception as e:
+            debug_print(f"render_frame failed: {e}", "mujoco_simulation.py", False)
+            return None
 
     def save_video(self, save_path: Path, frames: list):
         if not frames:
             print("Warning: No frames to save")
+            return
+        # Filter out any None frames defensively
+        frames = [f for f in frames if f is not None]
+        if not frames:
+            print("Error: All collected frames were None; nothing to save")
             return
         
         # Get frame size from the actual frame dimensions, not renderer settings
