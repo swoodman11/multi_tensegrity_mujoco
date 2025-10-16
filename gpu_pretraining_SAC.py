@@ -3,6 +3,7 @@ import gc
 import torch
 import numpy as np
 import psutil
+import json
 from datetime import datetime
 from pathlib import Path
 from tensegrity_env import TensegrityEnv
@@ -67,7 +68,7 @@ def check_system_requirements():
     
     return True, gpu_name, (gpu_memory_gb, system_ram_gb)
 
-def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timesteps=75000, demo_cycles=None):
+def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timesteps=75000, demo_cycles=None, reset_each_cycle=True):
     """
     GPU-optimized pretraining using roll sequence - following coding guidelines
     """
@@ -104,7 +105,7 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
         timing_breakdown['Environment Setup'] = time.time() - start_time
         print(f"   ✅ Environment setup completed ({timing_breakdown['Environment Setup']:.2f}s)")
         
-        # 2. Roll sequence demonstration generation - preserving your exact pattern
+        # 2. Roll sequence demonstration generation - load from zac_sequence.json
         print("\n2️⃣ Generating Roll Sequence Demonstrations...")
         start_time = time.time()
         
@@ -142,7 +143,7 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
         [1.0, 1.0, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
         [0.5, 0.5, 0.5, 0.5, 0.5, 0.5,   0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
         [1.0, 1.0, 0.1, 1.0, 1.0, 0.1,   0.1, 0.8, 0.0, 1.0, 1.0, 0.0], #start 1=b,2=r,3=g
-    ])
+        ])
         
         print(f"   Using roll sequence: {roll_sequence.shape[0]} steps × {roll_sequence.shape[1]} actuators")
         
@@ -171,6 +172,9 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
         print(f"   Generating {num_cycles} demonstration cycles for {config_name}")
         
         for cycle in range(num_cycles):
+            # For non-repeatable gaits, start each demo cycle from a clean initial state
+            if reset_each_cycle:
+                obs, _ = env.reset()
             if cycle % 100 == 0 and cycle > 0:
                 print(f"     Progress: {cycle}/{num_cycles} cycles completed")
                 
@@ -244,7 +248,7 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
         timing_breakdown['Model Initialization'] = time.time() - start_time
         print(f"   ✅ SAC model initialization completed ({timing_breakdown['Model Initialization']:.2f}s)")
         
-        # 4. GPU-accelerated behavioral cloning
+        # 4. GPU-accelerated behavioral cloning (now actually updates the actor)
         print("\n4️⃣ GPU-Accelerated Behavioral Cloning...")
         start_time = time.time()
         
@@ -257,6 +261,13 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
         # RTX 4090-optimized behavioral cloning
         num_bc_epochs = 30  # More epochs leveraging GPU speed
         batch_size = model_params.get('batch_size', 256)  # Large batches for RTX 4090
+        # Determine action scaling to match env action space
+        act_low = float(env.action_space.low[0])
+        act_high = float(env.action_space.high[0])
+        scale_to_env_space = (act_low, act_high)  # For reference/debug
+        
+        # Put actor in training mode
+        model.policy.actor.train()
         
         for epoch in range(num_bc_epochs):
             indices = np.random.permutation(len(all_observations))
@@ -269,20 +280,31 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
                 batch_actions = all_actions[batch_indices]
                 
                 # GPU tensor operations
-                obs_tensor = torch.FloatTensor(batch_obs).to(device)
-                action_tensor = torch.FloatTensor(batch_actions).to(device)
+                obs_tensor = torch.as_tensor(batch_obs, dtype=torch.float32, device=device)
+                target_actions = torch.as_tensor(batch_actions, dtype=torch.float32, device=device)
                 
-                # Enable gradients during BC so the loss can backpropagate into the policy
-                actions_pred = model.policy(obs_tensor)  # was wrapped in torch.no_grad(); ensure grad flows for BC
+                # If env action space is [-1, 1], rescale targets from [0, 1] to [-1, 1]
+                if act_low == -1.0 and act_high == 1.0:
+                    target_actions = target_actions * 2.0 - 1.0
+                # Forward through SAC actor to get actions; handle different return signatures
+                actor_out = model.policy.actor(obs_tensor, deterministic=True)
+                if isinstance(actor_out, (tuple, list)):
+                    actions_pred = actor_out[0]
+                else:
+                    actions_pred = actor_out
                 
-                loss = torch.nn.functional.mse_loss(actions_pred, action_tensor)
+                loss = torch.nn.functional.mse_loss(actions_pred, target_actions)
+                model.policy.actor.optimizer.zero_grad(set_to_none=True)
+                loss.backward()
+                model.policy.actor.optimizer.step()
+                
                 epoch_loss += loss.item()
                 num_batches += 1
             
             if epoch % 10 == 0:
                 avg_loss = epoch_loss / num_batches if num_batches > 0 else 0
                 current_memory = torch.cuda.memory_allocated(0) / 1e9
-                print(f"   Epoch {epoch}: Loss={avg_loss:.4f}, GPU={current_memory:.2f}GB")
+                print(f"   Epoch {epoch}: Loss={avg_loss:.4f}, GPU={current_memory:.2f}GB  (action_space=[{act_low:.1f},{act_high:.1f}])")
         
         timing_breakdown['Behavioral Cloning'] = time.time() - start_time
         print(f"   ✅ Behavioral cloning completed ({timing_breakdown['Behavioral Cloning']:.2f}s)")
@@ -379,6 +401,17 @@ def gpu_optimized_configs():
     """GPU-optimized configurations for different hardware setups"""
     
     return {
+        # Conservative preset for RTX 2080 Ti 11GB
+        "rtx2080ti_11gb_safe": {
+            "learning_rate": 3e-4,
+            "batch_size": 512,         # smaller to fit 11GB comfortably
+            "gamma": 0.99,
+            "ent_coef": 0.05,
+            "policy_kwargs": dict(
+                net_arch=[256, 256],   # compact net
+                activation_fn=torch.nn.ReLU
+            )
+        },
         "rtx4090_large": {
             "learning_rate": 3e-4,
             "batch_size": 2048,
@@ -526,7 +559,8 @@ def main():
             config_name, 
             params, 
             total_timesteps=timesteps,
-            demo_cycles=cycles
+            demo_cycles=cycles,
+            reset_each_cycle=True
         )
         results[config_name] = result
     
