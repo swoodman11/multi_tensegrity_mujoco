@@ -256,27 +256,27 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         end_pts = self.get_endpts()
         robot_pos = end_pts.mean(axis=0)  # Use the mean of end points as the robot's position
 
-        # Calculate forward velocity reward
-        velocity_reward = 0.0
-        # print("Robot position: ", self.prev_pos)
-        if hasattr(self, 'prev_pos') and self.prev_pos is not None:
-            # Calculate XY plane displacement
-            xy_displacement = robot_pos[:2] - self.prev_pos[:2]  # [x, y] only
-            xy_speed = np.linalg.norm(xy_displacement) / self.dt
+        # # Calculate forward velocity reward
+        # velocity_reward = 0.0
+        # # print("Robot position: ", self.prev_pos)
+        # if hasattr(self, 'prev_pos') and self.prev_pos is not None:
+        #     # Calculate XY plane displacement
+        #     xy_displacement = robot_pos[:2] - self.prev_pos[:2]  # [x, y] only
+        #     xy_speed = np.linalg.norm(xy_displacement) / self.dt
             
-            velocity_reward = xy_speed # Reward any XY movement with large magnitude
+        #     velocity_reward = xy_speed # Reward any XY movement with large magnitude
 
-        if hasattr(self, 'prev_pos') and self.prev_pos is not None:
-            # Calculate XY plane displacement
-            xy_displacement = robot_pos[:2] - self.prev_pos[:2]  # [x, y] only
-            # Reward positive forward velocity (assuming +x is forward direction)
-            forward_velocity = xy_displacement[0] / self.dt  # x-component of velocity
-            if forward_velocity > 0:
-                velocity_reward += forward_velocity # Additional reward for forward movement
+        # if hasattr(self, 'prev_pos') and self.prev_pos is not None:
+        #     # Calculate XY plane displacement
+        #     xy_displacement = robot_pos[:2] - self.prev_pos[:2]  # [x, y] only
+        #     # Reward positive forward velocity (assuming +x is forward direction)
+        #     forward_velocity = xy_displacement[0] / self.dt  # x-component of velocity
+        #     if forward_velocity > 0:
+        #         velocity_reward += forward_velocity # Additional reward for forward movement
         
         # Distance-based reward removed (avoid camping far from origin)
 
-        penalties = self.calculate_anti_exploit_penalties(robot_pos, controls) * 0.0
+        # penalties = self.calculate_anti_exploit_penalties(robot_pos, controls) * 0.0
 
 
         # Notes with Jue 10/03/2025:
@@ -604,9 +604,9 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         lift_dwell_penalty = max(lift_dwell_penalty, -1.0)
         self.prev_end_pts = end_pts.copy()
 
-        imu_x_rotation_reward = self._reward_x_axis_rotation()
+        # imu_x_rotation_reward = self._reward_x_axis_rotation()
 
-        imu_x_rotation_speed_reward = self._reward_x_axis_desired_rotation_speed(desired_speed=0.5)
+        # imu_x_rotation_speed_reward = self._reward_x_axis_desired_rotation_speed(desired_speed=0.5)
 
         # Weighting individual reward components
         # velocity_reward *= 0.0
@@ -626,14 +626,14 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
 
         # NOTE: Hey Zac, i thought we weren't incentivizing actual rolling, so the jittering stopped but weird behaviour here
         # NEW - Promotes actual rolling
-        cumulative_rotation_reward = self._reward_cumulative_x_axis_rotation()
-        consistent_direction_reward = self._reward_consistent_rolling_direction(window_size=15)
-        displacement_progress_reward = self._reward_angular_displacement_progress(target_rotations_per_episode=1)
+        # cumulative_rotation_reward = self._reward_cumulative_x_axis_rotation()
+        # consistent_direction_reward = self._reward_consistent_rolling_direction(window_size=15)
+        # displacement_progress_reward = self._reward_angular_displacement_progress(target_rotations_per_episode=1)
 
         # Weighting - adjust based on what works best
-        cumulative_rotation_reward *= 5.0      # Reward total rotation progress
-        consistent_direction_reward *= 3.0     # Reward consistent direction
-        displacement_progress_reward *= 10.0    # Reward actual angular displacement
+        # cumulative_rotation_reward *= 5.0      # Reward total rotation progress
+        # consistent_direction_reward *= 3.0     # Reward consistent direction
+        # displacement_progress_reward *= 10.0    # Reward actual angular displacement
 
         # reward = (velocity_reward + distance_reward + penalties*1.0 + 
         #   cumulative_rotation_reward + consistent_direction_reward + displacement_progress_reward)
