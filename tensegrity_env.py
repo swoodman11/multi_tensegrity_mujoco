@@ -12,10 +12,12 @@ def debug_print(message, filename="tensegrity_env.py", debug_enabled=False):
         print(f"DEBUG {filename}: {message}")
 
 class TensegrityEnv(gym.Env):
-    def __init__(self, obs_dim=None, visualize=False, obs_mode: str = "tier2", debug_enabled=False):
+    def __init__(self, obs_dim=None, visualize=False, obs_mode: str = "tier2", debug_enabled=False, max_episode_steps=500):
         super().__init__()
         
         self.debug_enabled = debug_enabled
+        self.max_episode_steps = max_episode_steps
+        self._elapsed_steps = 0
         
         # Setup the simulator with Path object
         xml_path = Path("mujoco_physics_engine/xml_models/two_3bar_new_platform_config_1.xml")
@@ -46,6 +48,7 @@ class TensegrityEnv(gym.Env):
         if seed is not None:
             np.random.seed(seed)
         obs = self.sim.reset()
+        self._elapsed_steps = 0
         info = {}  # Required by new Gym API
         return obs, info
 
@@ -53,8 +56,11 @@ class TensegrityEnv(gym.Env):
         # Simulate one timestep by passing in target lengths to the simulator
         obs, reward, done, info = self.sim.sim_step(action)
 
-        # Handle truncation (new in Gymnasium)
-        truncated = False  # Set to True if episode ends due to time limit
+        # Increment step counter
+        self._elapsed_steps += 1
+        
+        # Handle truncation due to time limit
+        truncated = (self._elapsed_steps >= self.max_episode_steps)
 
         return obs, reward, done, truncated, info
 

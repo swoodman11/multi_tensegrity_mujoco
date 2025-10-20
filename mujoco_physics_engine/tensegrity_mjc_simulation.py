@@ -58,9 +58,13 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         #                      + list(range(self.n_cables // 2, self.n_cables // 2 + num_actuated_cables // 2)))
         self.actuated_ids = [0, 1, 2, 3, 4, 5, 15, 16, 17, 18, 19, 20]  # All vertex-to-bar cables
         debug_print(f"actuated_ids: {self.actuated_ids}", "tensegrity_mjc_simulation.py", self.debug_enabled)
-        # Observation mode: 'tier2' (96D) or 'legacy104' (104D)
+        # Observation mode: 'tier2' (96D) or 'legacy104' (104D) + 2D for goal direction = 98D or 106D
         self.obs_mode = obs_mode if obs_mode in ("tier2", "legacy104") else "tier2"
-        self.obs_dim = (96 if self.obs_mode == "tier2" else 104) if obs_dim is None else obs_dim
+        self.obs_dim = (98 if self.obs_mode == "tier2" else 106) if obs_dim is None else obs_dim
+        
+        # Goal direction for directional locomotion task (initialized in reset)
+        self.goal_direction = np.array([1.0, 0.0], dtype=np.float32)  # Default: +X direction
+        self.initial_yaw = 0.0  # Will be randomized in reset
         
         if self.visualize and hasattr(self, 'viewer') and self.viewer is not None:
             # Make camera view bigger - increase distance to zoom out
@@ -120,6 +124,24 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         # IMU (rods) geom names present in XML sensors
         self.imu_geom_names = ["t1_r01", "t1_r23", "t1_r45", "t2_r01", "t2_r23", "t2_r45"]
 
+    def _euler_to_quaternion(self, roll, pitch, yaw):
+        """
+        Convert Euler angles (roll, pitch, yaw) to quaternion [w, x, y, z].
+        """
+        cy = np.cos(yaw * 0.5)
+        sy = np.sin(yaw * 0.5)
+        cp = np.cos(pitch * 0.5)
+        sp = np.sin(pitch * 0.5)
+        cr = np.cos(roll * 0.5)
+        sr = np.sin(roll * 0.5)
+
+        w = cr * cp * cy + sr * sp * sy
+        x = sr * cp * cy - cr * sp * sy
+        y = cr * sp * cy + sr * cp * sy
+        z = cr * cp * sy - sr * sp * cy
+
+        return np.array([w, x, y, z])
+
     def bring_to_grnd(self):
         """
         Finds the z-translation that would bring the lowest end cap to the ground, and aplies it to the robot
@@ -135,12 +157,40 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
     def reset(self):
         """
         Resets the robots as if it was just instantiated from the xml file.
+        Applies domain randomization: random goal direction only (friction disabled for testing).
         """
         super().reset()
         self.bring_to_grnd()
+        
+        # Sample random yaw angle (0 to 2π radians) for goal direction
+        # NOTE: We randomize the GOAL DIRECTION, not the robot's physical orientation
+        # This is simpler and equally effective for learning directional control
+        self.initial_yaw = np.random.uniform(0, 2 * np.pi)
+        
+        # Calculate goal direction as unit vector in rotated X-axis direction
+        self.goal_direction = np.array([
+            np.cos(self.initial_yaw),
+            np.sin(self.initial_yaw)
+        ], dtype=np.float32)
+        
+        # Randomize friction (±20%) - DISABLED to isolate reward rebalancing effects
+        # friction_multiplier = np.random.uniform(0.8, 1.2)
+        # for geom_id in range(self.mjc_model.ngeom):
+        #     # Store original friction on first reset
+        #     if not hasattr(self, '_original_friction'):
+        #         self._original_friction = self.mjc_model.geom_friction.copy()
+        #     
+        #     # Apply randomization
+        #     self.mjc_model.geom_friction[geom_id, 0] = \
+        #         self._original_friction[geom_id, 0] * friction_multiplier
+        
         # Store the original state
-        self.prev_pos = None
+        self.prev_pos = self._compute_COM_position()[:2]  # Store XY position
+        if not hasattr(self, 'initial_pos'):
+            self.initial_pos = self.prev_pos.copy()
         self.step_count = 0
+        self.at_goal_steps = 0
+        self.cumulative_distance = 0.0
 
         for motor in self.cable_motors:
             motor.reset_omega_t()
@@ -652,9 +702,44 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         
         # reward = (penalties*1.0 + 
         #   cumulative_rotation_reward + consistent_direction_reward + displacement_progress_reward)
+        # Directional locomotion reward: encourage movement in goal_direction
+        current_xy = robot_pos[:2]
+        
+        # Calculate velocity in XY plane
+        if hasattr(self, 'prev_pos') and self.prev_pos is not None:
+            # Ensure prev_pos is 2D for velocity calculation
+            prev_xy = self.prev_pos[:2] if len(self.prev_pos) > 2 else self.prev_pos
+            velocity_xy = (current_xy - prev_xy) / self.dt
+            
+            # Project velocity onto goal direction (parallel component)
+            directional_velocity = float(np.dot(velocity_xy, self.goal_direction))
+            
+            # Perpendicular component (we want to penalize sideways drift)
+            perpendicular_direction = np.array([-self.goal_direction[1], self.goal_direction[0]])
+            perpendicular_velocity = float(np.dot(velocity_xy, perpendicular_direction))
+            
+            # Reward: tanh-scaled directional velocity (main component)
+            directional_velocity_reward = 15.0 * float(np.tanh(5.0 * directional_velocity))
+            
+            # Penalty for perpendicular motion (reduce drift)
+            perpendicular_penalty = -2.0 * abs(perpendicular_velocity)
+            
+            # Track cumulative distance traveled in goal direction
+            if not hasattr(self, 'cumulative_distance'):
+                self.cumulative_distance = 0.0
+            distance_delta = directional_velocity * self.dt
+            self.cumulative_distance += distance_delta
+            
+            # Small bonus for net cumulative progress (asymptotes to avoid unbounded growth)
+            cumulative_distance_bonus = 2.0 * float(np.tanh(0.2 * self.cumulative_distance))
+        else:
+            directional_velocity_reward = 0.0
+            perpendicular_penalty = 0.0
+            cumulative_distance_bonus = 0.0
+        
         # Compose final reward (remove total distance reward; emphasize continuous progress)
-        lifted_centroid_xy_reward_weight = 5.0
-        grounded_centroid_xy_reward_weight = 14.0
+        lifted_centroid_xy_reward_weight = 4.0  # Phase 2: Increased from 3.0 to encourage movement (was 5.0 originally)
+        grounded_centroid_xy_reward_weight = 11.0  # Phase 2: Increased from 8.0 to encourage movement (was 14.0 originally)
         # Glide-specific hover penalty gating: require sustained stall and few lifts
         lifted_count = int(np.sum(lifted_mask))
         hover_weight = 0.0 if (self.stall_streak < 5 or lifted_count >= 2) else 3.0
@@ -664,22 +749,25 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         if controls is not None:
             if hasattr(self, 'prev_controls') and self.prev_controls is not None:
                 try:
-                    action_smooth_penalty = -0.05 * float(np.sum(np.abs(controls - self.prev_controls)))
+                    action_smooth_penalty = -0.3 * float(np.sum(np.abs(controls - self.prev_controls)))  # Increased from -0.05 to penalize gliding
                 except Exception:
                     action_smooth_penalty = 0.0
             self.prev_controls = controls.copy()
-        action_smooth_penalty = max(action_smooth_penalty, -1.0)
+        action_smooth_penalty = max(action_smooth_penalty, -5.0)  # Increased cap from -1.0 to allow stronger penalty
         reward_raw = (
             endpoint_height_reward
             + lifted_centroid_xy_reward_weight * lifted_centroid_xy_reward
             + grounded_centroid_xy_reward_weight * grounded_centroid_xy_reward
-            + 24.0 * com_step_progress
-            + 7.0 * lifted_swing_reward
+            + 18.0 * com_step_progress  # Phase 2: Increased from 15.0 to encourage movement (was 24.0 originally)
+            + 6.0 * lifted_swing_reward  # Phase 2: Increased from 5.0 to encourage movement (was 7.0 originally)
             + stall_penalty
             + resume_bonus
             + lift_dwell_penalty
             + hover_weight * hover_term
             + action_smooth_penalty
+            + directional_velocity_reward
+            + perpendicular_penalty
+            + cumulative_distance_bonus
         )
         # Final reward clipping to keep critic stable
         reward = float(np.clip(reward_raw, -40.0, 40.0))
@@ -688,7 +776,8 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         # if hasattr(self, 'prev_pos') and self.prev_pos is not None:
         #     # Calculate displacement from initial state
 
-        self.prev_pos = robot_pos.copy()
+        # Store current position for next step's velocity calculation (2D only for directional rewards)
+        self.prev_pos = current_xy.copy()
         self.step_count = getattr(self, 'step_count', 0) + 1
 
         # Build observation based on selected mode
@@ -713,7 +802,13 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
             'resume_bonus': float(resume_bonus),
             'lift_dwell_penalty': float(lift_dwell_penalty),
             'lift_streak_mean': float(np.mean(self.lift_streaks)),
-            'hover_weight_applied': float(hover_weight)
+            'hover_weight_applied': float(hover_weight),
+            'directional_velocity_reward': float(directional_velocity_reward),
+            'perpendicular_penalty': float(perpendicular_penalty),
+            'cumulative_distance_bonus': float(cumulative_distance_bonus),
+            'cumulative_distance': float(self.cumulative_distance) if hasattr(self, 'cumulative_distance') else 0.0,
+            'current_xy_position': current_xy.tolist(),
+            'goal_direction': self.goal_direction.tolist(),
         }
         
         return observation, reward, done, info
@@ -1376,15 +1471,16 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
             imu_grav,                    # 18
             imu_ang_norm,                # 18
             com_lin_vel_norm,            # 3
-            com_ang_vel_norm             # 3
+            com_ang_vel_norm,            # 3
+            self.goal_direction          # 2 (NEW: goal direction for directional locomotion)
         ]
         obs = np.concatenate(parts).astype(np.float32)
-        # Ensure exact 96 dims
-        if obs.shape[0] != 96:
-            if obs.shape[0] < 96:
-                obs = np.pad(obs, (0, 96 - obs.shape[0]))
+        # Ensure exact 98 dims (updated from 96 to include goal_direction)
+        if obs.shape[0] != 98:
+            if obs.shape[0] < 98:
+                obs = np.pad(obs, (0, 98 - obs.shape[0]))
             else:
-                obs = obs[:96]
+                obs = obs[:98]
         return np.nan_to_num(obs, nan=0.0, posinf=1.0, neginf=-1.0)
 
 

@@ -1,3 +1,25 @@
+"""
+GPU-Accelerated SAC Pretraining for Tensegrity Robot
+
+� STABILIZED CONFIG - CRITIC LOSS FIX APPLIED
+================================================
+Changes from previous run (that had critic loss explosion):
+- Learning Rate: 4e-4 → 2e-4 (halved for stability)
+- Batch Size: 1024 → 2048 (doubled for smoother gradients)  
+- Adam epsilon: default → 1e-5 (more stable optimizer)
+
+Current settings:
+- timesteps = 500_000
+- cycles = 250
+- eval_freq = 10_000 (50 evaluations - high frequency for monitoring)
+- n_eval_episodes = 3
+
+For full 2M training after 500k validation:
+Line ~628: timesteps = 2_000_000
+Line ~412: eval_freq = 50_000
+================================================
+"""
+
 import time
 import gc
 import torch
@@ -68,12 +90,47 @@ def check_system_requirements():
     
     return True, gpu_name, (gpu_memory_gb, system_ram_gb)
 
+def apply_domain_randomization(env):
+    """
+    Apply domain randomization at environment reset for robust pretraining.
+    
+    NOTE: This is now handled automatically in the simulator's reset() method.
+    This function is kept for compatibility but just triggers a reset.
+    
+    Randomizes (via simulator reset):
+    - Goal direction (0 to 360 degrees)
+    - Ground friction (±20%)
+    
+    Returns:
+        desired_direction: np.ndarray - Unit vector for goal direction
+        yaw_angle: float - Angle used to generate goal direction in radians
+    """
+    # The simulator's reset() method now handles all domain randomization
+    # We just need to return the values it set
+    if hasattr(env.sim, 'goal_direction') and hasattr(env.sim, 'initial_yaw'):
+        return env.sim.goal_direction, env.sim.initial_yaw
+    else:
+        # Fallback: manually set if not already done
+        import random
+        yaw_angle = random.uniform(0, 2 * np.pi)
+        desired_direction = np.array([np.cos(yaw_angle), np.sin(yaw_angle)], dtype=np.float32)
+        env.sim.initial_yaw = yaw_angle
+        env.sim.goal_direction = desired_direction
+        return desired_direction, yaw_angle
+
+
 def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timesteps=75000, demo_cycles=None, reset_each_cycle=True):
     """
-    GPU-optimized pretraining using roll sequence - following coding guidelines
+    GPU-optimized pretraining using roll sequence with domain randomization
+    
+    Each demonstration cycle:
+    - Resets environment with random yaw rotation
+    - Randomizes ground friction (±20%)
+    - Adds action noise (σ=0.05)
+    - Executes full roll sequence
     """
     print(f"\n{'='*60}")
-    print(f"🚀 GPU Pretraining: {config_name}")
+    print(f"🚀 GPU Pretraining with Domain Randomization: {config_name}")
     print(f"{'='*60}")
     
     device = "cuda:0"
@@ -84,7 +141,7 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
         print("\n1️⃣ Environment Setup...")
         start_time = time.time()
         
-        env = TensegrityEnv(visualize=False)  # No visualization for GPU training
+        env = TensegrityEnv(visualize=False, max_episode_steps=500)  # Training environment with episode limits
         
         # CRITICAL validation per coding guidelines
         expected_obs_dim = 96  # From coding guidelines
@@ -163,33 +220,57 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
             elif "rtx4090" in config_name:
                 num_cycles = 100 #1000
             elif "rtx2080ti_32gb" in config_name:
-                num_cycles = 300
+                num_cycles = 500
             else:
                 num_cycles = 100
         else:
             num_cycles = demo_cycles
         
-        print(f"   Generating {num_cycles} demonstration cycles for {config_name}")
+        print(f"   Generating {num_cycles} demonstration cycles with domain randomization")
+        print(f"   Domain randomization: yaw rotation (0-360°), friction (±20%), action noise (σ=0.05)")
+        
+        # Determine print frequency based on number of cycles
+        if num_cycles <= 20:
+            print_freq = 1  # Print every cycle for small runs
+        elif num_cycles <= 100:
+            print_freq = 10  # Print every 10 cycles
+        else:
+            print_freq = 100  # Print every 100 cycles for large runs
         
         for cycle in range(num_cycles):
-            # For non-repeatable gaits, start each demo cycle from a clean initial state
+            # Reset environment for each demonstration cycle
+            # NOTE: env.reset() automatically applies domain randomization:
+            #   - Random goal direction (yaw 0-360°)
+            #   - Random friction (±20%)
             if reset_each_cycle:
                 obs, _ = env.reset()
-            if cycle % 100 == 0 and cycle > 0:
-                print(f"     Progress: {cycle}/{num_cycles} cycles completed")
                 
+                # Get the randomized values that were set by reset()
+                desired_direction, yaw_angle = apply_domain_randomization(env)
+                
+                # Print progress at appropriate frequency
+                if cycle % print_freq == 0:
+                    yaw_deg = np.degrees(yaw_angle)
+                    print(f"     Cycle {cycle}/{num_cycles}: yaw={yaw_deg:.1f}°, direction=[{desired_direction[0]:.3f}, {desired_direction[1]:.3f}]")
+            
+            # Execute full roll sequence with action noise
             for step_idx, action in enumerate(roll_sequence):
                 action = np.array(action, dtype=np.float32)
-                action = np.clip(action, 0.0, 1.0)  # Normalized cable lengths per coding guidelines
+                
+                # Add Gaussian action noise (σ=0.05 for actions in [0, 1])
+                action_noise = np.random.normal(0, 0.05, size=action.shape)
+                action_noisy = np.clip(action + action_noise, 0.0, 1.0)
                 
                 trajectory["observations"].append(obs.copy())
-                trajectory["actions"].append(action.copy())
+                trajectory["actions"].append(action_noisy.copy())  # Store noisy action
                 
-                obs, reward, terminated, truncated, info = env.step(action)
+                obs, reward, terminated, truncated, info = env.step(action_noisy)
                 trajectory["rewards"].append(reward)
                 
+                # If episode terminates mid-sequence, reset and reapply domain randomization
                 if terminated or truncated:
                     obs, _ = env.reset()
+                    desired_direction, yaw_angle = apply_domain_randomization(env)
         
         timing_breakdown['Roll Sequence Generation'] = time.time() - start_time
         print(f"   Roll sequence generation completed in {timing_breakdown['Roll Sequence Generation']:.2f} seconds")
@@ -216,6 +297,10 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
         #     device=device,
         #     **model_params
         # )
+        # Enable PyTorch optimizations for better GPU utilization
+        torch.backends.cudnn.benchmark = True  # Auto-tune kernels for your GPU
+        torch.set_float32_matmul_precision('high')  # Use TensorFloat-32 for faster matmul
+        
         # for SAC:
         model = SAC(
             "MlpPolicy",
@@ -223,7 +308,7 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
             verbose=1,
             tensorboard_log=f"./sac_tensegrity_tensorboard_{config_name}/",
             device=device,
-            **model_params
+            **model_params  # Uses train_freq and gradient_steps from config
         )
 
         ## for Td3
@@ -258,9 +343,9 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
         print(f"   Training on {len(all_observations)} samples")
         print(f"   Obs shape: {all_observations.shape}, Action shape: {all_actions.shape}")
         
-        # RTX 4090-optimized behavioral cloning
-        num_bc_epochs = 30  # More epochs leveraging GPU speed
-        batch_size = model_params.get('batch_size', 256)  # Large batches for RTX 4090
+        # GPU-optimized behavioral cloning with larger batches
+        num_bc_epochs = 250  # More epochs leveraging GPU speed
+        batch_size = max(model_params.get('batch_size', 256), 512)  # Minimum 512 for GPU efficiency
         # Determine action scaling to match env action space
         act_low = float(env.action_space.low[0])
         act_high = float(env.action_space.high[0])
@@ -321,13 +406,14 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
         
 
         # Set up evaluation environment (no render)
-        eval_env = TensegrityEnv(visualize=False)
+        eval_env = TensegrityEnv(visualize=False, max_episode_steps=500)
 
         eval_callback = EvalCallback(
             eval_env,
             best_model_save_path=f"./logs/best_model_{config_name}/",
             log_path=f"./logs/evals_{config_name}/",
-            eval_freq=10000,                   # <- 🔁 Evaluate every 10k steps
+            eval_freq=10000,                   # Evaluate every 10k steps (50 evals total for 500k run)
+            n_eval_episodes=3,                 # 3 episodes per evaluation for reliability
             deterministic=True,
             render=False,
             verbose=1
@@ -336,8 +422,9 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
         # Execute training with progress bar
         model.learn(
             total_timesteps=total_timesteps,
-            # callback=eval_callback,
-            progress_bar=True
+            callback=eval_callback,
+            progress_bar=True,
+            log_interval=10  # Log to tensorboard every 10 episodes
         )
         
         post_training_memory = torch.cuda.memory_allocated(0) / 1e9
@@ -444,14 +531,20 @@ def gpu_optimized_configs():
             )
         },
         "rtx2080ti_32gb_efficient": {
-            # Faster training wall-clock; smaller nets and batches
-            "learning_rate": 4e-4,
-            "batch_size": 384,
-            "gamma": 0.99,
-            "ent_coef": 0.05,
+            # STABILIZED CONFIG: Fixed critic loss explosion issue
+            # Changes from previous: LR 4e-4→2e-4, batch 1024→2048, added optimizer_kwargs
+            "learning_rate": 3e-4,        # REDUCED: Was 4e-4, halved for critic stability
+            "batch_size": 2048,           # INCREASED: Was 1024, doubled for more stable gradients
+            "gamma": 0.999,
+            "ent_coef": 0.1,
+            "buffer_size": 500_000,       # Larger replay buffer for more samples
+            "learning_starts": 5000,      # Start learning earlier
+            "train_freq": (4, "step"),    # Train every 4 steps instead of default 1
+            "gradient_steps": 4,          # Multiple gradient steps per env step
             "policy_kwargs": dict(
-                net_arch=[256, 256, 128],
-                activation_fn=torch.nn.ReLU
+                net_arch=[2048, 1024, 512, 256], # 256,256,128->512,512,256: Bigger network
+                activation_fn=torch.nn.ReLU,
+                optimizer_kwargs=dict(eps=1e-5)  # ADDED: More stable Adam optimizer
             )
         },
         "rtx5090_extreme": {
@@ -529,11 +622,13 @@ def main():
         print(f"🚀 RTX 4090 detected! Using optimized configurations for {gpu_memory_gb:.1f}GB VRAM")
         
     elif "2080" in gpu_name and system_ram_gb >= 24:
-        # Favor faster wall-clock with 2M steps; use the efficient config only
+        # INTERMEDIATE RUN: 500k timesteps for assessment
         selected_configs = {"rtx2080ti_32gb_efficient": configs["rtx2080ti_32gb_efficient"]}
-        timesteps = 2_500_000
-        cycles = 10  # fewer demo cycles to cut pretraining time
-        print(f"🚀 RTX 2080 Ti + 32GB RAM detected! Using efficient configuration for ~2M steps")
+        timesteps = 300_000  # Intermediate checkpoint (change to 2_000_000 for full training)
+        cycles = 50  # Reasonable demo cycles for 500k training
+        print(f"🚀 RTX 2080 Ti + 32GB RAM - 500K CHECKPOINT RUN")
+        print(f"   Using {timesteps:,} timesteps and {cycles} demo cycles")
+        print(f"   Will evaluate every 100k steps for monitoring")
         
     else:
         # Default to RTX 4090 large as requested

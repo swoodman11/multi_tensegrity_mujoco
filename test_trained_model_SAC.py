@@ -374,15 +374,187 @@ def create_detailed_cable_plots(obs_np, timestamp, save_plots=False, obs_mode="t
     plt.close()
 
 # Parse command line arguments
-parser = argparse.ArgumentParser(description="Test trained tensegrity model")
+def test_directional_control(model, directions_to_test=None, steps_per_direction=500, visualize=False):
+    """
+    Test the trained model's ability to follow different directional commands.
+    
+    Creates a fresh environment for each direction to ensure proper visualization.
+    
+    Args:
+        model: Trained SAC/PPO model
+        directions_to_test: List of (name, direction_vector) tuples. If None, tests 8 cardinal directions.
+        steps_per_direction: Number of steps to test each direction
+        visualize: Whether to render during testing
+        
+    Returns:
+        dict: Dictionary containing performance metrics for each direction
+    """
+    if directions_to_test is None:
+        # Define 8 cardinal and intercardinal directions
+        directions_to_test = [
+            ("North (0°)", np.array([1.0, 0.0])),
+            ("Northeast (45°)", np.array([np.cos(np.pi/4), np.sin(np.pi/4)])),
+            ("East (90°)", np.array([0.0, 1.0])),
+            ("Southeast (135°)", np.array([np.cos(3*np.pi/4), np.sin(3*np.pi/4)])),
+            ("South (180°)", np.array([-1.0, 0.0])),
+            ("Southwest (225°)", np.array([np.cos(5*np.pi/4), np.sin(5*np.pi/4)])),
+            ("West (270°)", np.array([0.0, -1.0])),
+            ("Northwest (315°)", np.array([np.cos(7*np.pi/4), np.sin(7*np.pi/4)])),
+        ]
+    
+    results = {}
+    
+    print("\n" + "="*70)
+    print("DIRECTIONAL CONTROL TEST")
+    print("="*70)
+    
+    for direction_name, direction_vector in directions_to_test:
+        # Calculate angle relative to world X-axis
+        angle_rad = np.arctan2(direction_vector[1], direction_vector[0])
+        angle_deg = np.degrees(angle_rad)
+        # Normalize to [0, 360)
+        if angle_deg < 0:
+            angle_deg += 360
+        
+        print(f"\nTesting direction: {direction_name}")
+        print(f"  Goal direction vector: [{direction_vector[0]:.3f}, {direction_vector[1]:.3f}]")
+        print(f"  Angle from world +X axis: {angle_deg:.1f}°")
+        
+        # Create fresh environment for this direction test
+        # This ensures proper visualization and prevents stale state
+        from tensegrity_env import TensegrityEnv
+        env = TensegrityEnv(visualize=visualize)
+        
+        # Reset environment
+        obs, info = env.reset()
+        
+        # Override the goal direction in the simulator
+        env.sim.goal_direction = direction_vector.copy()
+        env.sim.cumulative_distance = 0.0
+        
+        # Track metrics
+        total_reward = 0.0
+        directional_distance = 0.0
+        perpendicular_deviation = 0.0
+        initial_pos = env.sim._compute_COM_position()[:2].copy()
+        
+        for step in range(steps_per_direction):
+            # Get action from model
+            action, _ = model.predict(obs, deterministic=True)
+            
+            # Step environment
+            obs, reward, done, truncated, info = env.step(action)
+            total_reward += reward
+            
+            # Calculate directional progress
+            current_pos = env.sim._compute_COM_position()[:2]
+            displacement = current_pos - initial_pos
+            
+            # Project displacement onto goal direction
+            directional_distance = float(np.dot(displacement, direction_vector))
+            
+            # Calculate perpendicular deviation
+            perpendicular_direction = np.array([-direction_vector[1], direction_vector[0]])
+            perpendicular_deviation = abs(float(np.dot(displacement, perpendicular_direction)))
+            
+            if visualize:
+                env.render()
+                time.sleep(0.001)
+            
+            if done or truncated:
+                break
+        
+        # Store results
+        # Calculate total distance traveled (Euclidean)
+        total_distance_traveled = float(np.linalg.norm(displacement))
+        
+        # Efficiency: What fraction of movement was in the goal direction?
+        # Positive efficiency = moving toward goal
+        # Negative efficiency = moving away from goal
+        # Range: -100% to +100%
+        if total_distance_traveled > 0.01:  # Avoid division by zero
+            efficiency = (directional_distance / total_distance_traveled) * 100.0
+        else:
+            efficiency = 0.0
+        
+        # Alternative metric: Absolute efficiency (ignoring direction, just straightness)
+        # How straight is the path regardless of forward/backward?
+        if total_distance_traveled > 0.01:
+            straightness = (abs(directional_distance) / total_distance_traveled) * 100.0
+        else:
+            straightness = 0.0
+        
+        results[direction_name] = {
+            'total_reward': total_reward,
+            'directional_distance': directional_distance,
+            'perpendicular_deviation': perpendicular_deviation,
+            'total_distance_traveled': total_distance_traveled,
+            'steps': step + 1,
+            'distance_per_step': directional_distance / (step + 1),
+            'efficiency': efficiency,  # -100% to +100%, positive = correct direction
+            'straightness': straightness,  # 0% to 100%, ignores direction
+            'angle_deg': angle_deg
+        }
+        
+        # Print summary for this direction
+        print(f"  Total reward: {total_reward:.2f}")
+        print(f"  Directional distance: {directional_distance:.3f}m")
+        print(f"  Total distance traveled: {total_distance_traveled:.3f}m")
+        print(f"  Perpendicular deviation: {perpendicular_deviation:.3f}m")
+        print(f"  Distance per step: {directional_distance/(step+1):.4f}m")
+        print(f"  Directional efficiency: {efficiency:.1f}% (positive = toward goal)")
+        print(f"  Path straightness: {straightness:.1f}% (100% = perfectly straight)")
+        
+        # Close environment to free resources and prepare for next test
+        try:
+            env.close()
+            del env
+        except:
+            pass
+    
+    # Print overall summary
+    print("\n" + "="*70)
+    print("SUMMARY")
+    print("="*70)
+    avg_reward = np.mean([r['total_reward'] for r in results.values()])
+    avg_distance = np.mean([r['directional_distance'] for r in results.values()])
+    avg_efficiency = np.mean([r['efficiency'] for r in results.values()])
+    avg_straightness = np.mean([r['straightness'] for r in results.values()])
+    avg_total_distance = np.mean([r['total_distance_traveled'] for r in results.values()])
+    
+    print(f"Average reward across all directions: {avg_reward:.2f}")
+    print(f"Average directional distance: {avg_distance:.3f}m")
+    print(f"Average total distance traveled: {avg_total_distance:.3f}m")
+    print(f"Average directional efficiency: {avg_efficiency:.1f}% (positive = toward goal)")
+    print(f"Average path straightness: {avg_straightness:.1f}% (100% = straight line)")
+    
+    # Print per-direction breakdown
+    print("\nDetailed Results by Direction:")
+    print("-" * 90)
+    print(f"{'Direction':20s} | {'Angle':>7s} | {'Dir.Dist':>9s} | {'Efficiency':>10s} | {'Straightness':>12s}")
+    print("-" * 90)
+    for direction_name, metrics in results.items():
+        print(f"{direction_name:20s} | "
+              f"{metrics['angle_deg']:6.1f}° | "
+              f"{metrics['directional_distance']:8.3f}m | "
+              f"{metrics['efficiency']:9.1f}% | "
+              f"{metrics['straightness']:11.1f}%")
+    print("="*90 + "\n")
+    
+    return results
+
+
+parser = argparse.ArgumentParser(description="Test a trained SAC/PPO model")
 parser.add_argument("--model", type=str, default=None, 
-                   help="Specific model path to load (without .zip extension). If not provided, uses most recent model.")
+                   help="Path to trained model (without .zip extension). If not specified, finds most recent model.")
 parser.add_argument("--no-vis", action="store_true", 
                    help="Disable visualization")
 parser.add_argument("--save-plots", action="store_true", 
                    help="Save observation and analysis plots as PNG files (disabled by default)")
 parser.add_argument("--save-video", action="store_true", 
                    help="Save simulation as video file (disabled by default)")
+parser.add_argument("--test-directions", action="store_true",
+                   help="Run directional control test instead of standard rollout")
 args = parser.parse_args()
 
 # Determine which model to load
@@ -396,9 +568,26 @@ else:
 model = SAC.load(model_path)
 # interesting post physics etc 20250929_134907
 # different configuration doesn't experience same physics freakout: ppo_tensegrity_gait_20250930_091454
-env = TensegrityEnv(visualize=not args.no_vis)  # Visualization controlled by command line flag
 
 print(f"Testing trained model: {os.path.basename(model_path)}")
+
+# Check if directional control test is requested
+if args.test_directions:
+    print("\n=== Running Directional Control Test ===")
+    print("Creating fresh environments for each direction test...")
+    test_results = test_directional_control(
+        model=model,
+        steps_per_direction=500,
+        visualize=not args.no_vis
+    )
+    print("\nDirectional control test complete!")
+    # Exit after directional test
+    import sys
+    sys.exit(0)
+
+# For standard testing (not directional), create environment once
+env = TensegrityEnv(visualize=not args.no_vis)  # Visualization controlled by command line flag
+
 print("Testing trained model with visualization..." if not args.no_vis else "Testing trained model without visualization...")
 if not args.no_vis:
     print("Press 'q' in the render window to quit early")
@@ -438,7 +627,7 @@ print(f"Observation mode: {env.sim.obs_mode}")
 
 print(f"\n=== Visualizing Robot Gait ===")
 
-for step in range(10000):  # Max steps per episode
+for step in range(1000):  # Max steps per episode
     # mujoco.mj_step(model, data)
     action, _ = model.predict(obs, deterministic=True)
     # Ensure action shape is (num_actuators,)
