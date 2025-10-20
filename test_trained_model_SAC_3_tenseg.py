@@ -37,7 +37,7 @@ from stable_baselines3 import PPO
 from stable_baselines3 import SAC
 
 from stable_baselines3 import TD3
-from tensegrity_env import TensegrityEnv
+from tensegrity_env_config_3 import TensegrityEnv
 import time
 import os
 import glob
@@ -126,16 +126,18 @@ def create_tier2_observation_plots(obs_np, timestamp, save_plots=False):
     """
     
     # Define observation groups for Tier2
+    # Define observation groups for Tier2
     groups = {
-        "Cable Lengths (Normalized)": (0, 12),
-        "Cable Length Rates": (12, 24),  
-        "Previous Actions": (24, 36),
-        "Strain Extensions": (36, 54),
-        "IMU Gravity Vectors": (54, 72),
-        "IMU Angular Velocities": (72, 90),
-        "COM Linear Velocity": (90, 93),
-        "COM Angular Velocity": (93, 96)
+        "Cable Lengths (Normalized)": (0, 18),      # 18 cables (6 per robot × 3 robots)
+        "Cable Length Rates": (18, 36),             # 18 velocity measurements
+        "Previous Actions": (36, 54),               # 18 previous actuator commands
+        "Strain Extensions": (54, 81),              # 27 tendons (18 actuated + 9 structural)
+        "IMU Gravity Vectors": (81, 108),           # 27 values (9 IMUs × 3 axes)
+        "IMU Angular Velocities": (108, 135),       # 27 values (9 IMUs × 3 axes)
+        "COM Linear Velocity": (135, 138),          # 3 values (x, y, z)
+        "COM Angular Velocity": (138, 141)          # 3 values (roll, pitch, yaw)
     }
+    
     
     t = np.arange(obs_np.shape[0])
     
@@ -299,16 +301,16 @@ def create_detailed_cable_plots(obs_np, timestamp, save_plots=False, obs_mode="t
     
     if obs_mode == "tier2":
         # Tier2: Cable lengths (0-11), Cable rates (12-23), Previous actions (24-35)
-        cable_lengths = obs_np[:, 0:12]
-        cable_rates = obs_np[:, 12:24] 
-        prev_actions = obs_np[:, 24:36]
+        cable_lengths = obs_np[:, 0:18]
+        cable_rates = obs_np[:, 18:36] 
+        prev_actions = obs_np[:, 36:54]
         
         fig, axes = plt.subplots(3, 1, figsize=(15, 12))
         t = np.arange(obs_np.shape[0])
         
         # Cable lengths
         ax = axes[0]
-        for i in range(12):
+        for i in range(18):
             ax.plot(t, cable_lengths[:, i], label=f'Cable {i+1}', linewidth=1.2, alpha=0.8)
         ax.set_title('Cable Lengths (Normalized)', fontweight='bold')
         ax.set_ylabel('Normalized Length')
@@ -317,7 +319,7 @@ def create_detailed_cable_plots(obs_np, timestamp, save_plots=False, obs_mode="t
         
         # Cable rates  
         ax = axes[1]
-        for i in range(12):
+        for i in range(18):
             ax.plot(t, cable_rates[:, i], label=f'Cable {i+1}', linewidth=1.2, alpha=0.8)
         ax.set_title('Cable Length Rates (Normalized)', fontweight='bold')
         ax.set_ylabel('Normalized Rate')
@@ -326,7 +328,7 @@ def create_detailed_cable_plots(obs_np, timestamp, save_plots=False, obs_mode="t
         
         # Previous actions
         ax = axes[2] 
-        for i in range(12):
+        for i in range(18):
             ax.plot(t, prev_actions[:, i], label=f'Action {i+1}', linewidth=1.2, alpha=0.8)
         ax.set_title('Previous Actions', fontweight='bold')
         ax.set_xlabel('Time Step')
@@ -336,14 +338,14 @@ def create_detailed_cable_plots(obs_np, timestamp, save_plots=False, obs_mode="t
         
     else:  # legacy mode
         # Legacy: Cable state is in positions 42-66 (12 cables × 2 values each)
-        cable_data = obs_np[:, 42:66]
+        cable_data = obs_np[:, 42:78]
         
         fig, axes = plt.subplots(2, 1, figsize=(15, 10))
         t = np.arange(obs_np.shape[0])
         
         # Cable lengths (even indices: 0, 2, 4, ...)
         ax = axes[0]
-        for i in range(12):
+        for i in range(18):
             if 2*i < cable_data.shape[1]:
                 ax.plot(t, cable_data[:, 2*i], label=f'Cable {i+1}', linewidth=1.2, alpha=0.8)
         ax.set_title('Cable Lengths', fontweight='bold')
@@ -353,7 +355,7 @@ def create_detailed_cable_plots(obs_np, timestamp, save_plots=False, obs_mode="t
         
         # Cable velocities (odd indices: 1, 3, 5, ...)
         ax = axes[1]
-        for i in range(12):
+        for i in range(18):
             if 2*i+1 < cable_data.shape[1]:
                 ax.plot(t, cable_data[:, 2*i+1], label=f'Cable {i+1}', linewidth=1.2, alpha=0.8)
         ax.set_title('Cable Velocities', fontweight='bold')
@@ -430,7 +432,7 @@ observations_log = []     # list of shape (T, obs_dim) - now storing full observ
 
 # Store full observations instead of just selected indices
 obs_dim = int(np.asarray(obs).shape[0]) if obs is not None else env.sim.obs_dim
-num_actuators = getattr(env, 'num_actuators', 12)
+num_actuators = getattr(env, 'num_actuators', 18)
 
 print(f"Obs dim: {obs_dim}, storing full observation vector")
 print(f"Action dim: {num_actuators}")
@@ -511,7 +513,7 @@ obs_np = np.asarray(observations_log, dtype=float) if len(observations_log) else
 
 if actions_np.shape[0] > 0:
     # Actions plot: 3x4 subplots if 12 actuators, else a single plot overlay
-    if num_actuators == 12:
+    if num_actuators == 18:
         fig, axes = plt.subplots(3, 4, figsize=(14, 8), sharex=True, sharey=True)
         axes = axes.ravel()
         t = np.arange(actions_np.shape[0])
