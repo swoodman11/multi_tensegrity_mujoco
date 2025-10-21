@@ -32,7 +32,123 @@ from tensegrity_env import TensegrityEnv
 from stable_baselines3 import PPO
 from stable_baselines3 import SAC
 from stable_baselines3 import TD3
-from stable_baselines3.common.callbacks import EvalCallback
+from stable_baselines3.common.callbacks import EvalCallback, BaseCallback
+
+
+class DirectionalEvalCallback(BaseCallback):
+    """
+    Custom evaluation callback that tests both random directions and cardinal directions.
+    
+    Tests:
+    - 8 random directions per evaluation
+    - 8 cardinal directions (0°, 45°, 90°, 135°, 180°, 225°, 270°, 315°)
+    
+    This ensures the policy is evaluated on:
+    1. Diverse random scenarios (generalization)
+    2. Specific challenging directions (especially rear-facing 180-315°)
+    """
+    
+    def __init__(
+        self,
+        eval_env,
+        best_model_save_path=None,
+        log_path=None,
+        eval_freq=10000,
+        n_random_episodes=8,
+        deterministic=True,
+        render=False,
+        verbose=1
+    ):
+        super().__init__(verbose)
+        self.eval_env = eval_env
+        self.best_model_save_path = best_model_save_path
+        self.log_path = log_path
+        self.eval_freq = eval_freq
+        self.n_random_episodes = n_random_episodes
+        self.deterministic = deterministic
+        self.render = render
+        self.best_mean_reward = -np.inf
+        self.last_mean_reward = 0.0
+        
+        # Cardinal directions (8 equally-spaced angles: 0°, 45°, 90°, ..., 315°)
+        self.cardinal_angles = [i * 45 for i in range(8)]  # [0, 45, 90, 135, 180, 225, 270, 315]
+        
+        # Create log directory
+        if log_path is not None:
+            Path(log_path).mkdir(parents=True, exist_ok=True)
+        if best_model_save_path is not None:
+            Path(best_model_save_path).mkdir(parents=True, exist_ok=True)
+    
+    def _on_step(self):
+        if self.n_calls % self.eval_freq == 0:
+            # Evaluate on random directions
+            random_rewards = []
+            for _ in range(self.n_random_episodes):
+                obs, info = self.eval_env.reset()
+                episode_reward = 0
+                done = False
+                truncated = False
+                while not (done or truncated):
+                    action, _ = self.model.predict(obs, deterministic=self.deterministic)
+                    obs, reward, done, truncated, info = self.eval_env.step(action)
+                    episode_reward += reward
+                random_rewards.append(episode_reward)
+            
+            # Evaluate on cardinal directions
+            cardinal_rewards = {}
+            for angle_deg in self.cardinal_angles:
+                angle_rad = np.radians(angle_deg)
+                goal_direction = np.array([np.cos(angle_rad), np.sin(angle_rad)], dtype=np.float32)
+                
+                obs, info = self.eval_env.reset()
+                self.eval_env.sim.goal_direction = goal_direction  # Override with cardinal direction
+                
+                episode_reward = 0
+                done = False
+                truncated = False
+                while not (done or truncated):
+                    action, _ = self.model.predict(obs, deterministic=self.deterministic)
+                    obs, reward, done, truncated, info = self.eval_env.step(action)
+                    episode_reward += reward
+                cardinal_rewards[angle_deg] = episode_reward
+            
+            # Compute statistics
+            mean_random_reward = np.mean(random_rewards)
+            mean_cardinal_reward = np.mean(list(cardinal_rewards.values()))
+            overall_mean_reward = (mean_random_reward + mean_cardinal_reward) / 2.0
+            
+            # Log to TensorBoard
+            self.logger.record("eval/mean_random_reward", mean_random_reward)
+            self.logger.record("eval/mean_cardinal_reward", mean_cardinal_reward)
+            self.logger.record("eval/mean_reward", overall_mean_reward)
+            
+            # Log individual cardinal directions for detailed analysis
+            for angle_deg, reward in cardinal_rewards.items():
+                self.logger.record(f"eval/cardinal_{angle_deg}deg", reward)
+            
+            # Save best model
+            if overall_mean_reward > self.best_mean_reward:
+                self.best_mean_reward = overall_mean_reward
+                if self.best_model_save_path is not None:
+                    self.model.save(Path(self.best_model_save_path) / "best_model")
+                    if self.verbose > 0:
+                        print(f"New best mean reward: {overall_mean_reward:.2f} (saved)")
+            
+            # Print evaluation summary
+            if self.verbose > 0:
+                print(f"\nEvaluation at {self.n_calls} steps:")
+                print(f"  Random directions (n={self.n_random_episodes}): {mean_random_reward:.2f}")
+                print(f"  Cardinal directions:")
+                for angle_deg in self.cardinal_angles:
+                    reward = cardinal_rewards[angle_deg]
+                    status = "✓" if reward > mean_cardinal_reward * 0.8 else "✗"
+                    print(f"    {angle_deg:3d}°: {reward:8.2f} {status}")
+                print(f"  Overall mean: {overall_mean_reward:.2f}")
+                print(f"  Best mean: {self.best_mean_reward:.2f}\n")
+            
+            self.last_mean_reward = overall_mean_reward
+        
+        return True
 
 
 def check_system_requirements():
@@ -408,12 +524,14 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
         # Set up evaluation environment (no render)
         eval_env = TensegrityEnv(visualize=False, max_episode_steps=500)
 
-        eval_callback = EvalCallback(
+        # Use custom directional evaluation callback
+        # Tests 8 random directions + 8 cardinal directions (0°, 45°, ..., 315°)
+        eval_callback = DirectionalEvalCallback(
             eval_env,
             best_model_save_path=f"./logs/best_model_{config_name}/",
             log_path=f"./logs/evals_{config_name}/",
-            eval_freq=10000,                   # Evaluate every 10k steps (50 evals total for 500k run)
-            n_eval_episodes=3,                 # 3 episodes per evaluation for reliability
+            eval_freq=10000,                   # Evaluate every 10k steps
+            n_random_episodes=8,               # 8 random direction episodes
             deterministic=True,
             render=False,
             verbose=1
@@ -531,20 +649,23 @@ def gpu_optimized_configs():
             )
         },
         "rtx2080ti_32gb_efficient": {
-            # STABILIZED CONFIG: Fixed critic loss explosion issue
-            # Changes from previous: LR 4e-4→2e-4, batch 1024→2048, added optimizer_kwargs
-            "learning_rate": 3e-4,        # REDUCED: Was 4e-4, halved for critic stability
-            "batch_size": 2048,           # INCREASED: Was 1024, doubled for more stable gradients
-            "gamma": 0.999,
-            "ent_coef": 0.1,
-            "buffer_size": 500_000,       # Larger replay buffer for more samples
-            "learning_starts": 5000,      # Start learning earlier
-            "train_freq": (4, "step"),    # Train every 4 steps instead of default 1
+            # MATCHED TO SAC_34 (20251019_223958) - PROVEN CONFIGURATION
+            # Extracted from saved model hyperparameters
+            "learning_rate": 1.5e-4,      # Reduced from 2e-4 to stabilize critic loss
+            "batch_size": 2048,           # SAC_34 value: 2048
+            "gamma": 0.99,                # SAC_34 value: 0.99
+            "ent_coef": 0.05,             # SAC_34 value: 0.05 (fixed, not auto)
+            "buffer_size": 500_000,       # SAC_34 value: 500,000
+            "tau": 0.005,                 # SAC_34 value: 0.005 (target network update)
+            "target_entropy": -12.0,      # SAC_34 value: -12.0
+            "learning_starts": 5000,      # Reasonable default
+            "train_freq": (4, "step"),    # Train every 4 steps
             "gradient_steps": 4,          # Multiple gradient steps per env step
             "policy_kwargs": dict(
-                net_arch=[2048, 1024, 512, 256], # 256,256,128->512,512,256: Bigger network
-                activation_fn=torch.nn.ReLU,
-                optimizer_kwargs=dict(eps=1e-5)  # ADDED: More stable Adam optimizer
+                # SAC_34 Actor: 98 → 512 → 512 → 256 → 12
+                # SAC_34 Critic: 110 → 512 → 512 → 256 → 1
+                net_arch=[512, 512, 256],  # Matches SAC_34 architecture exactly
+                activation_fn=torch.nn.ReLU
             )
         },
         "rtx5090_extreme": {
@@ -622,13 +743,15 @@ def main():
         print(f"🚀 RTX 4090 detected! Using optimized configurations for {gpu_memory_gb:.1f}GB VRAM")
         
     elif "2080" in gpu_name and system_ram_gb >= 24:
-        # INTERMEDIATE RUN: 500k timesteps for assessment
+        # EXTENDED VALIDATION: 150k timesteps with new walking/rolling reward structure
         selected_configs = {"rtx2080ti_32gb_efficient": configs["rtx2080ti_32gb_efficient"]}
-        timesteps = 300_000  # Intermediate checkpoint (change to 2_000_000 for full training)
-        cycles = 50  # Reasonable demo cycles for 500k training
-        print(f"🚀 RTX 2080 Ti + 32GB RAM - 500K CHECKPOINT RUN")
+        timesteps = 150_000  # Extended validation to assess new reward structure (change to 500_000 for full training)
+        cycles = 100  # Reasonable demo cycles
+        print(f"🚀 RTX 2080 Ti + 32GB RAM - EXTENDED VALIDATION (150k steps)")
         print(f"   Using {timesteps:,} timesteps and {cycles} demo cycles")
-        print(f"   Will evaluate every 100k steps for monitoring")
+        print(f"   Will evaluate every 10k steps (15 total evaluations, 10 episodes each)")
+        print(f"   Learning rate: 1.5e-4 (reduced from 2e-4 to stabilize critic loss)")
+        print(f"   New reward structure: Heavy rolling (15.0), strong directional (35.0), anti-slide penalties")
         
     else:
         # Default to RTX 4090 large as requested

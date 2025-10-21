@@ -718,11 +718,11 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
             perpendicular_direction = np.array([-self.goal_direction[1], self.goal_direction[0]])
             perpendicular_velocity = float(np.dot(velocity_xy, perpendicular_direction))
             
-            # Reward: tanh-scaled directional velocity (main component)
-            directional_velocity_reward = 15.0 * float(np.tanh(5.0 * directional_velocity))
+            # Reward: tanh-scaled directional velocity (main component) - INCREASED
+            directional_velocity_reward = 35.0 * float(np.tanh(5.0 * directional_velocity))  # Boosted from 25.0 to 35.0, PRIMARY directional signal
             
-            # Penalty for perpendicular motion (reduce drift)
-            perpendicular_penalty = -2.0 * abs(perpendicular_velocity)
+            # Penalty for perpendicular motion (reduce drift) - INCREASED
+            perpendicular_penalty = -5.0 * abs(perpendicular_velocity)  # Increased from -3.0 to -5.0, punish drift harder
             
             # Track cumulative distance traveled in goal direction
             if not hasattr(self, 'cumulative_distance'):
@@ -738,35 +738,111 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
             cumulative_distance_bonus = 0.0
         
         # Compose final reward (remove total distance reward; emphasize continuous progress)
-        lifted_centroid_xy_reward_weight = 4.0  # Phase 2: Increased from 3.0 to encourage movement (was 5.0 originally)
-        grounded_centroid_xy_reward_weight = 11.0  # Phase 2: Increased from 8.0 to encourage movement (was 14.0 originally)
+        lifted_centroid_xy_reward_weight = 1.0  # Reduced: direction-agnostic, conflicts with directional control
+        grounded_centroid_xy_reward_weight = 0.0  # DISABLED: Was rewarding sliding behavior - conflicts with walking/rolling gaits
         # Glide-specific hover penalty gating: require sustained stall and few lifts
+        # INCREASED from 3.0 to 8.0 to more strongly penalize gliding/skating behavior
         lifted_count = int(np.sum(lifted_mask))
-        hover_weight = 0.0 if (self.stall_streak < 5 or lifted_count >= 2) else 3.0
+        hover_weight = 0.0 if (self.stall_streak < 5 or lifted_count >= 2) else 8.0
+        
+        # Anti-glide penalty: detect vibration-based gliding (3-4 endpoints on ground, high velocity, high-freq control changes)
+        glide_penalty = 0.0
+        if hasattr(self, 'prev_pos') and self.prev_pos is not None and controls is not None:
+            velocity_xy = (robot_pos[:2] - self.prev_pos[:2]) / self.dt
+            velocity_mag = float(np.linalg.norm(velocity_xy))
+            
+            # Condition 1: High velocity (>0.04 m/s) with few endpoints grounded (3-6 endpoints on ground = gliding)
+            if velocity_mag > 0.04 and 3 <= num_ground <= 6:
+                # Condition 2: Check for high-frequency control oscillations (vibration gliding)
+                if hasattr(self, 'prev_controls') and self.prev_controls is not None:
+                    control_change = float(np.mean(np.abs(controls - self.prev_controls)))
+                    # High-frequency small oscillations (mean change >0.05 indicates vibration)
+                    if control_change > 0.05:
+                        # STRONG penalty: this is definitely vibration-based gliding
+                        glide_penalty = -12.0 * velocity_mag  # Weight: -12.0 per m/s (doubled from before)
+                        glide_penalty = max(glide_penalty, -20.0)  # Increased cap
+                    else:
+                        # Medium penalty: moving fast with few contacts but no obvious vibration
+                        glide_penalty = -6.0 * velocity_mag
+                        glide_penalty = max(glide_penalty, -10.0)
         
         # Action smoothing penalty to reduce jitter-glide
         action_smooth_penalty = 0.0
         if controls is not None:
             if hasattr(self, 'prev_controls') and self.prev_controls is not None:
                 try:
-                    action_smooth_penalty = -0.3 * float(np.sum(np.abs(controls - self.prev_controls)))  # Increased from -0.05 to penalize gliding
+                    action_smooth_penalty = -0.2 * float(np.sum(np.abs(controls - self.prev_controls)))  # Reduced: was -0.3, allow more variation for movement
                 except Exception:
                     action_smooth_penalty = 0.0
             self.prev_controls = controls.copy()
-        action_smooth_penalty = max(action_smooth_penalty, -5.0)  # Increased cap from -1.0 to allow stronger penalty
+        action_smooth_penalty = max(action_smooth_penalty, -3.0)  # Reduced cap: was -5.0, less harsh penalty
+        
+        # ===== NEW REWARD TERMS FOR WALKING/ROLLING GAITS =====
+        
+        # 1. ROTATION ALIGNMENT: Reward facing goal direction (bidirectional - robot can move front OR back toward goal)
+        rotation_alignment_reward = 0.0
+        if hasattr(self, 'prev_pos') and self.prev_pos is not None:
+            velocity_xy = (robot_pos[:2] - self.prev_pos[:2]) / self.dt
+            velocity_mag = float(np.linalg.norm(velocity_xy))
+            if velocity_mag > 0.01:  # Only when moving
+                velocity_unit = velocity_xy / velocity_mag
+                # Calculate alignment with goal direction
+                alignment = float(np.dot(velocity_unit, self.goal_direction))
+                # FIXED: Reward ABSOLUTE alignment - robot can face either direction toward goal
+                # This allows the robot to turn either clockwise or counterclockwise (whichever is shorter)
+                # and to move with either front or back toward the goal
+                rotation_alignment_reward = 5.0 * abs(alignment)  # Weight: 5.0, reward ANY movement toward goal
+        
+        # 2. FOOT LIFT REWARD: Encourage lifting feet (walking), penalize all-grounded (sliding)
+        foot_lift_reward = 0.0
+        num_lifted = int(np.sum(lifted_mask))
+        num_grounded = int(np.sum(ground_mask))
+        total_points = len(lifted_mask)
+        if total_points > 0:
+            lift_ratio = num_lifted / total_points
+            if 0.3 <= lift_ratio <= 0.7:
+                # Reward balanced stance (walking)
+                foot_lift_reward = 3.0
+            elif lift_ratio < 0.1:
+                # Penalize all-grounded (sliding)
+                foot_lift_reward = -2.0
+            elif lift_ratio > 0.9:
+                # Penalize all-lifted (falling)
+                foot_lift_reward = -1.0
+        
+        # 3. ROLLING REWARD: HEAVILY reward x-axis rotation (rolling gait)
+        rolling_reward = 0.0
+        try:
+            imu_ang = self._get_IMU_angular_velocities()
+            if len(imu_ang) >= 3:
+                # Extract x-axis angular velocities (every 3rd element starting from index 0)
+                x_angular_vels = imu_ang[::3]
+                # Calculate mean absolute x-axis rotation across all IMUs
+                x_rotation_magnitude = float(np.mean(np.abs(x_angular_vels)))
+                # HEAVY reward for rolling motion (scaled with tanh for stability)
+                rolling_reward = 15.0 * float(np.tanh(2.0 * x_rotation_magnitude))  # Weight: 15.0 (STRONG incentive)
+        except Exception:
+            rolling_reward = 0.0
+        
+        # ===== END NEW REWARD TERMS =====
+        
         reward_raw = (
             endpoint_height_reward
             + lifted_centroid_xy_reward_weight * lifted_centroid_xy_reward
             + grounded_centroid_xy_reward_weight * grounded_centroid_xy_reward
-            + 18.0 * com_step_progress  # Phase 2: Increased from 15.0 to encourage movement (was 24.0 originally)
-            + 6.0 * lifted_swing_reward  # Phase 2: Increased from 5.0 to encourage movement (was 7.0 originally)
+            + 10.0 * com_step_progress  # Reduced from 25.0 to 10.0, less dominant
+            + 6.0 * lifted_swing_reward  # Keep at 6.0
             + stall_penalty
             + resume_bonus
             + lift_dwell_penalty
             + hover_weight * hover_term
+            + glide_penalty  # NEW: -10.0 max, strong penalty for fast low-altitude movement
             + action_smooth_penalty
-            + directional_velocity_reward
-            + perpendicular_penalty
+            + directional_velocity_reward  # 35.0 max (boosted)
+            + perpendicular_penalty  # -5.0 (increased)
+            + rotation_alignment_reward  # FIXED: 5.0 max, now uses abs() for bidirectional turning
+            + foot_lift_reward  # NEW: 3.0 / -2.0
+            + rolling_reward  # NEW: 15.0 max (HEAVY)
             + cumulative_distance_bonus
         )
         # Final reward clipping to keep critic stable
@@ -805,6 +881,11 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
             'hover_weight_applied': float(hover_weight),
             'directional_velocity_reward': float(directional_velocity_reward),
             'perpendicular_penalty': float(perpendicular_penalty),
+            'rotation_alignment_reward': float(rotation_alignment_reward),  # NEW
+            'foot_lift_reward': float(foot_lift_reward),  # NEW
+            'rolling_reward': float(rolling_reward),  # NEW
+            'num_lifted': num_lifted,  # NEW - for debugging foot lift
+            'num_grounded': num_grounded,  # NEW - for debugging foot lift
             'cumulative_distance_bonus': float(cumulative_distance_bonus),
             'cumulative_distance': float(self.cumulative_distance) if hasattr(self, 'cumulative_distance') else 0.0,
             'current_xy_position': current_xy.tolist(),
