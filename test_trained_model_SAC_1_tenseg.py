@@ -443,44 +443,36 @@ print(f"Observation mode: {env.sim.obs_mode}")
 print(f"\n=== Visualizing Robot Gait ===")
 
 for step in range(2000):  # Max steps per episode
-    # mujoco.mj_step(model, data)
+    # Each env.step now advances by 100 physics steps (1s per action)
     action, _ = model.predict(obs, deterministic=True)
-    # Ensure action shape is (num_actuators,)
     action = np.asarray(action).reshape(-1)
     if action.shape[0] != num_actuators:
-        # Try to squeeze to correct size if batched
         action = action[:num_actuators]
 
     obs, reward, done, truncated, info = env.step(action)
-    
     total_reward += reward
     steps += 1
 
-    # Log after stepping (log the action we applied and the new obs/reward)
     actions_log.append(action.astype(float).tolist())
     rewards_log.append(float(reward))
     if obs is not None:
         obs_arr = np.asarray(obs).reshape(-1)
-        observations_log.append(obs_arr.astype(float).tolist())  # Store full observation
+        observations_log.append(obs_arr.astype(float).tolist())
     else:
         observations_log.append([float('nan')] * obs_dim)
-    
-    # Render the robot (only if visualization is enabled)
+
     if not args.no_vis:
         env.render()
-        time.sleep(0.01)  # Slow down for better viewing
-    
-    # Collect frames for video saving (if enabled)
+        time.sleep(0.01)
+
     if args.save_video:
-        # Use offscreen renderer to avoid viewer/GLFW dependency
         frame = env.sim.render_frame()
         if frame is not None:
             video_frames.append(frame)
-    
-    # Print progress every 50 steps
+
     if step % 50 == 0:
         print(f"Step {step}: Reward = {reward:.3f}, Total = {total_reward:.2f}")
-    
+
     if done or truncated:
         print("Episode ended!")
         break
