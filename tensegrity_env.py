@@ -12,11 +12,11 @@ def debug_print(message, filename="tensegrity_env.py", debug_enabled=False):
         print(f"DEBUG {filename}: {message}")
 
 class TensegrityEnv(gym.Env):
-    def __init__(self, obs_dim=None, visualize=False, obs_mode: str = "tier2", debug_enabled=False, max_episode_steps=500):
+    def __init__(self, obs_dim=None, visualize=False, obs_mode: str = "tier2", debug_enabled=False, max_episode_steps=50, render_pause=0.01):
         super().__init__()
         
         self.debug_enabled = debug_enabled
-        self.max_episode_steps = max_episode_steps
+        self.max_episode_steps = max_episode_steps  # Now 50 steps = 50 seconds (1 step = 1 second)
         self._elapsed_steps = 0
         
         # Setup the simulator with Path object
@@ -31,7 +31,8 @@ class TensegrityEnv(gym.Env):
             debug_enabled=debug_enabled,
             controller_kp=10.0,
             controller_ki=0.2,
-            controller_kd=2.0
+            controller_kd=2.0,
+            render_pause=render_pause  # Pass render_pause to simulator
         )
         
         debug_print(f"Simulator.__init__ called with visualize={visualize}", "tensegrity_env.py", debug_enabled)

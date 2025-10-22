@@ -457,9 +457,7 @@ def test_directional_control(model, directions_to_test=None, steps_per_direction
             perpendicular_direction = np.array([-direction_vector[1], direction_vector[0]])
             perpendicular_deviation = abs(float(np.dot(displacement, perpendicular_direction)))
             
-            if visualize:
-                env.render()
-                time.sleep(0.001)
+            # Note: Rendering handled internally by simulator when visualize=True
             
             if done or truncated:
                 break
@@ -544,7 +542,9 @@ def test_directional_control(model, directions_to_test=None, steps_per_direction
     return results
 
 
-parser = argparse.ArgumentParser(description="Test a trained SAC/PPO model")
+parser = argparse.ArgumentParser(
+    description="Test a trained SAC/PPO model (Note: 1 step = 1 second of simulation)"
+)
 parser.add_argument("--model", type=str, default=None, 
                    help="Path to trained model (without .zip extension). If not specified, finds most recent model.")
 parser.add_argument("--no-vis", action="store_true", 
@@ -627,7 +627,8 @@ print(f"Observation mode: {env.sim.obs_mode}")
 
 print(f"\n=== Visualizing Robot Gait ===")
 
-for step in range(1000):  # Max steps per episode
+# TIMESTEP FIX: Now 1 step = 1 second. Max 100 steps = 100 seconds of simulation
+for step in range(100):  # Was 1000, now 100 steps (each step = 1 second)
     # mujoco.mj_step(model, data)
     action, _ = model.predict(obs, deterministic=True)
     # Ensure action shape is (num_actuators,)
@@ -650,10 +651,7 @@ for step in range(1000):  # Max steps per episode
     else:
         observations_log.append([float('nan')] * obs_dim)
     
-    # Render the robot (only if visualization is enabled)
-    if not args.no_vis:
-        env.render()
-        time.sleep(0.0005)  # Slow down for better viewing
+    # Note: Rendering handled internally by simulator when visualize=True (no external render() needed)
     
     # Collect frames for video saving (if enabled)
     if args.save_video:
@@ -662,19 +660,17 @@ for step in range(1000):  # Max steps per episode
         if frame is not None:
             video_frames.append(frame)
     
-    # Print progress every 50 steps
-    if step % 50 == 0:
-        print(f"Step {step}: Reward = {reward:.3f}, Total = {total_reward:.2f}")
+    # Print progress every 20 steps
+    if step % 20 == 0:
+        print(f"Step {step}: Reward = {reward:.3f}, Total = {total_reward:.2f} (1 step = 1 second)")
     
     if done or truncated:
         print("Episode ended!")
         break
 
-print(f"Final: {steps} steps, Total reward: {total_reward:.2f}")
+print(f"Final: {steps} steps ({steps} seconds simulated), Total reward: {total_reward:.2f}")
 
-# Keep window open for a bit (only if visualization is enabled)
-if not args.no_vis:
-    time.sleep(2)
+# Note: No need for final sleep - window stays open automatically if visualize=True
 
 # Save video if enabled and frames were collected
 if args.save_video and video_frames:

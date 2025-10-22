@@ -7,7 +7,7 @@ from datetime import datetime
 def train_parallel():
     # Configuration
     n_envs = 4  # Start with fewer environments to debug
-    total_timesteps = 100_000
+    total_timesteps = 10_000  # Reduced by 10x for correct RL timescale
     
     print(f"Training with {n_envs} parallel environments...")
     

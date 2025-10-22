@@ -343,13 +343,13 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
             num_cycles = demo_cycles
         
         print(f"   Generating {num_cycles} demonstration cycles with domain randomization")
-        print(f"   Domain randomization: yaw rotation (0-360°), friction (±20%), action noise (σ=0.05)")
+        print(f"   Domain randomization: yaw rotation (0-360°), action noise (σ=0.05)")
         
         # Determine print frequency based on number of cycles
         if num_cycles <= 20:
             print_freq = 1  # Print every cycle for small runs
         elif num_cycles <= 100:
-            print_freq = 10  # Print every 10 cycles
+            print_freq = 1  # Print every 10 cycles
         else:
             print_freq = 100  # Print every 100 cycles for large runs
         
@@ -530,7 +530,7 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
             eval_env,
             best_model_save_path=f"./logs/best_model_{config_name}/",
             log_path=f"./logs/evals_{config_name}/",
-            eval_freq=10000,                   # Evaluate every 10k steps
+            eval_freq=5000,                   # Evaluate every 10k steps
             n_random_episodes=8,               # 8 random direction episodes
             deterministic=True,
             render=False,
@@ -745,8 +745,8 @@ def main():
     elif "2080" in gpu_name and system_ram_gb >= 24:
         # EXTENDED VALIDATION: 150k timesteps with new walking/rolling reward structure
         selected_configs = {"rtx2080ti_32gb_efficient": configs["rtx2080ti_32gb_efficient"]}
-        timesteps = 150_000  # Extended validation to assess new reward structure (change to 500_000 for full training)
-        cycles = 100  # Reasonable demo cycles
+        timesteps = 30_000  # Extended validation to assess new reward structure (change to 500_000 for full training)
+        cycles = 25  # Reasonable demo cycles
         print(f"🚀 RTX 2080 Ti + 32GB RAM - EXTENDED VALIDATION (150k steps)")
         print(f"   Using {timesteps:,} timesteps and {cycles} demo cycles")
         print(f"   Will evaluate every 10k steps (15 total evaluations, 10 episodes each)")

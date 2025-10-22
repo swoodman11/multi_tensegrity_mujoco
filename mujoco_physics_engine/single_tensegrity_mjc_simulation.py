@@ -32,6 +32,7 @@ from typing import Callable, Dict, List, Optional, Sequence, Tuple
 import json
 import numpy as np
 import mujoco
+import time
 
 from .mujoco_simulation import AbstractMuJoCoSimulator
 from .pid import PID
@@ -87,9 +88,11 @@ class SingleTensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         debug_enabled: bool = False,
         debug_max_steps: int = 20,
         obs_config: Optional[ObservationConfig] = None,
+        render_pause: float = 0.01,
     ):
         super().__init__(Path(xml_path), visualize, render_size, render_fps)
         self.debug_enabled = debug_enabled
+        self.render_pause = render_pause
         self.debug_max_steps = max(0, int(debug_max_steps))
         self.min_cable_length = min_cable_length
         self.max_cable_length = max_cable_length
@@ -196,14 +199,19 @@ class SingleTensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         return self.get_observation()
 
     def step(self, action: np.ndarray):
-        """Apply one action (normalized target lengths) then advance one physics step.
+        """Apply one action (normalized target lengths) then advance physics for 1 second (100 timesteps).
 
+        Executes one control step (1 second = 100 physics timesteps by default).
+        
         Action shape must match n_actuators. Each element in [0,1].
         Length mapping: target_length = min + a*(max-min)
         """
         action = np.asarray(action, dtype=np.float32)
         if action.shape != (self.n_actuators,):
             raise ValueError(f"Action shape {action.shape} != ({self.n_actuators},)")
+
+        # Calculate number of physics steps per action (100 steps for dt=0.01)
+        steps_per_action = int(1.0 / self.dt)
 
         # Disable underlying PID/DCMotor debug after configured number of steps (without modifying their source files)
         if (self.debug_enabled and not self._child_debug_disabled and self.step_count >= self.debug_max_steps):
@@ -225,116 +233,69 @@ class SingleTensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         else:
             action = clipped
 
-        # Compute controls via PID for each actuator (PID output treated as motor command)
-        controls = np.zeros(self.n_actuators, dtype=np.float32)
-        target_lengths_m = np.zeros(self.n_actuators, dtype=np.float32)
-        current_lengths_m = np.zeros(self.n_actuators, dtype=np.float32)
-        errors_m = np.zeros(self.n_actuators, dtype=np.float32)
-        pid_us = np.zeros(self.n_actuators, dtype=np.float32)
+        # Execute action for full duration (100 physics timesteps)
+        for step_i in range(steps_per_action):
+            # Compute controls via PID for each actuator (PID output treated as motor command)
+            controls = np.zeros(self.n_actuators, dtype=np.float32)
+            target_lengths_m = np.zeros(self.n_actuators, dtype=np.float32)
+            current_lengths_m = np.zeros(self.n_actuators, dtype=np.float32)
+            errors_m = np.zeros(self.n_actuators, dtype=np.float32)
+            pid_us = np.zeros(self.n_actuators, dtype=np.float32)
 
-        for idx, tendon_id in enumerate(self.actuated_ids):
-            target_norm = action[idx]
-            curr_len = self._tendon_current_length(tendon_id)
-            rest_len = self.mjc_model.tendon_lengthspring[tendon_id, 0]
-            # Map target_norm to physical target length for diagnostics
-            tgt_len = self.min_cable_length + target_norm * (self.max_cable_length - self.min_cable_length)
-            u, _ = self.pids[idx].update_control_by_target_norm_length(
-                curr_len, target_norm, rest_len, self.min_cable_length, self.max_cable_length
-            )
-            # Reintroduce inversion so that negative PID (contract) leads to rest-length decrease
-            controls[idx] = float(-u) #was negative
-            target_lengths_m[idx] = tgt_len
-            current_lengths_m[idx] = curr_len
-            errors_m[idx] = tgt_len - curr_len
-            pid_us[idx] = float(u)
-            # if idx == 0:
-                # print("u = ", u)
-
-        # # Check if your cable length ranges allow meaningful motion
-        # print(f"Cable control range: {self.min_cable_length:.4f}m to {self.max_cable_length:.4f}m")
-        # range_span = self.max_cable_length - self.min_cable_length
-        # print(f"Control span: {range_span*100:.1f}cm")
-
-        # # For tensegrity robots, typical ranges are 10-30cm
-        # if range_span < 0.1:  # Less than 10cm
-        #     print("⚠️  Control range may be too small for visible motion")
-        mujoco.mj_step1(self.mjc_model, self.mjc_data)  # prepare for control updates
-        # Update rest lengths using motor dynamics
-        #OLDDDDD
-        # for idx, tendon_id in enumerate(self.actuated_ids):
-        #     ctrl = controls[idx]
-        #     rest_length = self.mjc_model.tendon_lengthspring[tendon_id, 0]
-        #     dl = self.cable_motors[idx].compute_cable_length_delta(ctrl, self.dt)
-        #     # dl - dl*10  # Scale factor to increase responsiveness
-        #     new_rest = np.clip(rest_length + dl, self.min_cable_length, self.max_cable_length)
-        #     # Fix 4: consistent indexing, always assign [tendon_id, 0]
-        #     self.mjc_model.tendon_lengthspring[tendon_id, 0] = new_rest
-        #     if self.debug_enabled and self.step_count < self.debug_max_steps:
-        #         print(f"[diag] step={self.step_count} act={idx} tendon={tendon_id} target_norm={action[idx]:.3f} tgt_len={target_lengths_m[idx]:.4f} curr_len_pre={current_lengths_m[idx]:.4f} rest_pre={rest_length:.4f} u={pid_us[idx]:.3f} ctrl={ctrl:.3f} dl={dl:.6f} rest_new={new_rest:.4f}")
-
-        for idx, tendon_id in enumerate(self.actuated_ids):
-            # Compute current length
-            curr_len = self._tendon_current_length(tendon_id)
-
-            # Target normalized length from action
-            target_norm = action[idx]
-            target_len = self.min_cable_length + target_norm * (self.max_cable_length - self.min_cable_length)
-
-            # Cable update strategy: proportional adjustment based on error
-            error = target_len - curr_len
-
-            # Adjust rest length proportionally to the length error
-            k_cable = 0.5  # You can tune this gain value for responsiveness
-            delta_rest = k_cable * error
-
-            # Update the tendon rest length
-            old_rest = self.mjc_model.tendon_lengthspring[tendon_id, 0]
-            new_rest = np.clip(old_rest + delta_rest, self.min_cable_length, self.max_cable_length)
-            self.mjc_model.tendon_lengthspring[tendon_id, 0] = new_rest
-            # print("does new rest == rst length", new_rest == rest_len)
-            # print('max_cable_length:', self.max_cable_length)
-            
-
-
-
-            if self.debug_enabled and self.step_count < self.debug_max_steps:
-                print(
-                    f"[cable-update] step={self.step_count} act={idx} tendon={tendon_id} "
-                    f"curr_len={curr_len:.4f} target_len={target_len:.4f} error={error:.4f} "
-                    f"old_rest={old_rest:.4f} new_rest={new_rest:.4f}"
+            for idx, tendon_id in enumerate(self.actuated_ids):
+                target_norm = action[idx]
+                curr_len = self._tendon_current_length(tendon_id)
+                rest_len = self.mjc_model.tendon_lengthspring[tendon_id, 0]
+                # Map target_norm to physical target length for diagnostics
+                tgt_len = self.min_cable_length + target_norm * (self.max_cable_length - self.min_cable_length)
+                u, _ = self.pids[idx].update_control_by_target_norm_length(
+                    curr_len, target_norm, rest_len, self.min_cable_length, self.max_cable_length
                 )
+                # Reintroduce inversion so that negative PID (contract) leads to rest-length decrease
+                controls[idx] = float(-u)
+                target_lengths_m[idx] = tgt_len
+                current_lengths_m[idx] = curr_len
+                errors_m[idx] = tgt_len - curr_len
+                pid_us[idx] = float(u)
 
-
-
-
-        # # Check if DC motors are configured properly
-        # for idx, motor in enumerate(self.cable_motors):
-        #     max_dl = motor.compute_cable_length_delta(1.0, self.dt)
-        #     steps_for_1cm = 0.01 / abs(max_dl) if abs(max_dl) > 0 else float('inf')
+            mujoco.mj_step1(self.mjc_model, self.mjc_data)  # prepare for control updates
             
-        #     print(f"Motor {idx}: Max length change = {max_dl*1000:.3f}mm/step")
-        #     print(f"  Steps needed for 1cm motion: {steps_for_1cm:.0f}")
-            
-        #     if steps_for_1cm > 1000:  # More than 1000 steps for 1cm
-        #         print(f"  ⚠️  Motor {idx} is very slow - may need many steps to see motion")
+            # Update rest lengths using cable update strategy
+            for idx, tendon_id in enumerate(self.actuated_ids):
+                # Compute current length
+                curr_len = self._tendon_current_length(tendon_id)
 
-        # # Check PID responsiveness
-        # for idx, pid in enumerate(self.pids):
-        #     print(f"PID {idx}: Kp={pid.Kp}, Ki={pid.Ki}, Kd={pid.Kd}")
-            
-        #     # Test PID response to large error
-        #     test_error = 0.5  # 50% of range
-        #     test_response = pid.Kp * test_error
-        #     print(f"  Test response to 50% error: {test_response:.4f}")
-            
-        #     if abs(test_response) < 0.1:
-        #         print(f"  ⚠️  PID {idx} may be under-responsive (low Kp)")
-        mujoco.mj_step2(self.mjc_model, self.mjc_data)  # run dynamics
-        
+                # Target normalized length from action
+                target_norm = action[idx]
+                target_len = self.min_cable_length + target_norm * (self.max_cable_length - self.min_cable_length)
 
-        # mujoco.mj_forward(self.mjc_model, self.mjc_data)
+                # Cable update strategy: proportional adjustment based on error
+                error = target_len - curr_len
 
-        # mujoco.mj_step(self.mjc_model, self.mjc_data)
+                # Adjust rest length proportionally to the length error
+                k_cable = 0.5  # You can tune this gain value for responsiveness
+                delta_rest = k_cable * error
+
+                # Update the tendon rest length
+                old_rest = self.mjc_model.tendon_lengthspring[tendon_id, 0]
+                new_rest = np.clip(old_rest + delta_rest, self.min_cable_length, self.max_cable_length)
+                self.mjc_model.tendon_lengthspring[tendon_id, 0] = new_rest
+
+                if self.debug_enabled and self.step_count < self.debug_max_steps and step_i == 0:
+                    print(
+                        f"[cable-update] step={self.step_count} act={idx} tendon={tendon_id} "
+                        f"curr_len={curr_len:.4f} target_len={target_len:.4f} error={error:.4f} "
+                        f"old_rest={old_rest:.4f} new_rest={new_rest:.4f}"
+                    )
+
+            mujoco.mj_step2(self.mjc_model, self.mjc_data)  # run dynamics
+            
+            # Render every 5th physics step when visualization enabled (20 fps)
+            if self.visualize and step_i % 5 == 0:
+                self.render()
+                time.sleep(self.render_pause)
+
+        # After all 100 physics steps complete, compute observation and reward
         print("qpos before:", self.mjc_data.qpos.copy())
         self.forward()
         mujoco.mj_forward(self.mjc_model, self.mjc_data)

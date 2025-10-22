@@ -2,6 +2,7 @@ import multiprocessing
 from pathlib import Path
 from typing import List
 from PIL import Image
+import time
 
 import mujoco
 import numpy as np
@@ -39,9 +40,11 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
                  controller_ki: float = 0.0,
                  controller_kd: float = 1.0,
                  control_penalty_cap: float = 100.0,
-                 zoom_out_factor: float = 2.0):
+                 zoom_out_factor: float = 2.0,
+                 render_pause: float = 0.01):
         super().__init__(xml_path, visualize, render_size, render_fps)
         self.debug_enabled = debug_enabled
+        self.render_pause = render_pause
         self.control_penalty_cap = float(control_penalty_cap)
         self.min_cable_length = 0.6 # unit: meters*10 # NOTE: was 0.6 but changed to match PID default
         self.max_cable_length = 1.6 # unit: meters*10 # NOTE: was 2.4 but changed to match PID default
@@ -157,7 +160,8 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
     def reset(self):
         """
         Resets the robots as if it was just instantiated from the xml file.
-        Applies domain randomization: random goal direction only (friction disabled for testing).
+        Domain randomization: ONLY goal direction is randomized.
+        Friction randomization is currently DISABLED (friction remains fixed for all episodes).
         """
         super().reset()
         self.bring_to_grnd()
@@ -173,16 +177,9 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
             np.sin(self.initial_yaw)
         ], dtype=np.float32)
         
-        # Randomize friction (±20%) - DISABLED to isolate reward rebalancing effects
-        # friction_multiplier = np.random.uniform(0.8, 1.2)
-        # for geom_id in range(self.mjc_model.ngeom):
-        #     # Store original friction on first reset
-        #     if not hasattr(self, '_original_friction'):
-        #         self._original_friction = self.mjc_model.geom_friction.copy()
-        #     
-        #     # Apply randomization
-        #     self.mjc_model.geom_friction[geom_id, 0] = \
-        #         self._original_friction[geom_id, 0] * friction_multiplier
+        # Friction randomization is currently DISABLED. Friction remains fixed for all episodes.
+        if getattr(self, 'debug_enabled', False):
+            print("[Domain Randomization] Goal direction randomized. Friction randomization: OFF (fixed friction)")
         
         # Store the original state
         self.prev_pos = self._compute_COM_position()[:2]  # Store XY position
@@ -215,6 +212,8 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
 
     def sim_step(self, target_lengths=None):
         """Single environment step applying target normalized cable lengths.
+        
+        Executes one control step (1 second = 100 physics timesteps by default).
 
         Returns
         -------
@@ -224,14 +223,11 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         info : dict containing detailed reward & penalty component breakdowns,
                plus control signals and the applied normalized target action.
         """
+        # Calculate number of physics steps per action (100 steps for dt=0.01)
+        steps_per_action = int(1.0 / self.dt)
+        
         ctrl_idx = 0
         controls = None
-
-        # NOTE: double check that target_lengths is in [0, 1] range
-
-        # Adding some debugging here (Setph)
-
-        # self.apply_random_perturbation() #can comment
 
         # Convert target_lengths to controls in [-1, 1]
         if target_lengths is not None:
@@ -246,15 +242,16 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
             # Update previous action buffer used by observations
             if hasattr(self, 'prev_action'):
                 self.prev_action = desired_norms.astype(np.float32)
+                
+        # Execute action for full duration (100 physics timesteps)
+        for step_i in range(steps_per_action):
             # Legacy loop structure retained but single execution due to early return below
-            for i in range(len(target_lengths)):
-                lengths = target_lengths[i]
-                rest_length = self.mjc_model.tendon_lengthspring[self.actuated_ids[i], 0]
+            if target_lengths is not None:
+                for i in range(len(target_lengths)):
+                    lengths = target_lengths[i]
+                    rest_length = self.mjc_model.tendon_lengthspring[self.actuated_ids[i], 0]
 
-                # # Normalize lengths to [0, 1]
-                # norm_length = (lengths - self.min_cable_length) / (self.max_cable_length - self.min_cable_length)
-                # 1. Controls: convert target normalized lengths to control signals [-1,1]
-                if target_lengths is not None:
+                    # 1. Controls: convert target normalized lengths to control signals [-1,1]
                     controls = np.zeros(self.n_actuators, dtype=float)
                     for i in range(min(len(target_lengths), self.n_actuators)):
                         desired_norm = float(desired_norms[i])
@@ -272,24 +269,37 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
                         for i in range(3):
                             if i+6 < self.n_actuators and i+3 < self.n_actuators:
                                 controls[i+6] = controls[i+3]
-                else:
-                    controls = np.zeros(self.n_actuators, dtype=float)
 
-                # 2. Apply motor updates to tendon rest lengths
-                for tendon_id in self.actuated_ids:
-                    action_idx = self.actuated_ids.index(tendon_id)
-                    ctrl = controls[action_idx]
-                    cable_rest_length = self.mjc_model.tendon_lengthspring[tendon_id, 0]
-                    dl = self.cable_motors[action_idx].compute_cable_length_delta(ctrl, self.dt)
-                    new_rest_length = np.clip(cable_rest_length + dl, self.min_cable_length, self.max_cable_length)
-                    self.mjc_model.tendon_lengthspring[tendon_id] = new_rest_length
-                    debug_print(f"Cable {tendon_id} dl={dl:.4f} ctrl={ctrl:.3f} newL={new_rest_length:.3f}",
-                                "tensegrity_mjc_simulation.py", self.debug_enabled)
+                    # 2. Apply motor updates to tendon rest lengths
+                    for tendon_id in self.actuated_ids:
+                        action_idx = self.actuated_ids.index(tendon_id)
+                        ctrl = controls[action_idx]
+                        cable_rest_length = self.mjc_model.tendon_lengthspring[tendon_id, 0]
+                        dl = self.cable_motors[action_idx].compute_cable_length_delta(ctrl, self.dt)
+                        new_rest_length = np.clip(cable_rest_length + dl, self.min_cable_length, self.max_cable_length)
+                        self.mjc_model.tendon_lengthspring[tendon_id] = new_rest_length
+                        debug_print(f"Cable {tendon_id} dl={dl:.4f} ctrl={ctrl:.3f} newL={new_rest_length:.3f}",
+                                    "tensegrity_mjc_simulation.py", self.debug_enabled)
 
-                # 3. Step physics
+            # 3. Step physics once
+            mujoco.mj_step(self.mjc_model, self.mjc_data)
+            self.forward()
+            
+            # Render every 5th physics step when visualization enabled (20 fps)
+            if self.visualize and step_i % 5 == 0:
+                self.render()
+                time.sleep(self.render_pause)
+            else:
+                # If no target_lengths provided, just step physics
                 mujoco.mj_step(self.mjc_model, self.mjc_data)
                 self.forward()
+                
+            # Render every 5th physics step when visualization enabled (20 fps)
+            if self.visualize and step_i % 5 == 0:
+                self.render()
+                time.sleep(self.render_pause)
 
+        # After all 100 physics steps complete, compute observation and reward
         # Get end points for locomotion reward
         end_pts = self.get_endpts()
         robot_pos = end_pts.mean(axis=0)  # Use the mean of end points as the robot's position
@@ -722,7 +732,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
             directional_velocity_reward = 35.0 * float(np.tanh(5.0 * directional_velocity))  # Boosted from 25.0 to 35.0, PRIMARY directional signal
             
             # Penalty for perpendicular motion (reduce drift) - INCREASED
-            perpendicular_penalty = -5.0 * abs(perpendicular_velocity)  # Increased from -3.0 to -5.0, punish drift harder
+            perpendicular_penalty = -7.5 * abs(perpendicular_velocity)  # Increased from -3.0 to -5.0, punish drift harder
             
             # Track cumulative distance traveled in goal direction
             if not hasattr(self, 'cumulative_distance'):
@@ -738,7 +748,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
             cumulative_distance_bonus = 0.0
         
         # Compose final reward (remove total distance reward; emphasize continuous progress)
-        lifted_centroid_xy_reward_weight = 1.0  # Reduced: direction-agnostic, conflicts with directional control
+        lifted_centroid_xy_reward_weight = 10.0  # Reduced: direction-agnostic, conflicts with directional control
         grounded_centroid_xy_reward_weight = 0.0  # DISABLED: Was rewarding sliding behavior - conflicts with walking/rolling gaits
         # Glide-specific hover penalty gating: require sustained stall and few lifts
         # INCREASED from 3.0 to 8.0 to more strongly penalize gliding/skating behavior
@@ -791,7 +801,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
                 # FIXED: Reward ABSOLUTE alignment - robot can face either direction toward goal
                 # This allows the robot to turn either clockwise or counterclockwise (whichever is shorter)
                 # and to move with either front or back toward the goal
-                rotation_alignment_reward = 5.0 * abs(alignment)  # Weight: 5.0, reward ANY movement toward goal
+                rotation_alignment_reward = 7.5 * abs(alignment)  # Weight: 5.0, reward ANY movement toward goal
         
         # 2. FOOT LIFT REWARD: Encourage lifting feet (walking), penalize all-grounded (sliding)
         foot_lift_reward = 0.0
@@ -846,7 +856,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
             + cumulative_distance_bonus
         )
         # Final reward clipping to keep critic stable
-        reward = float(np.clip(reward_raw, -40.0, 40.0))
+        reward = float(np.clip(reward_raw, -100.0, 100.0))
         
         # # Calculate total forward distance reward
         # if hasattr(self, 'prev_pos') and self.prev_pos is not None:

@@ -18,7 +18,7 @@ def make_env(rank=0, seed=0):
 def train_parallel():
     # Configuration
     n_envs = 8  # Number of parallel environments
-    total_timesteps = 100_000
+    total_timesteps = 10_000  # Reduced by 10x for correct RL timescale
     
     print(f"Training with {n_envs} parallel environments...")
     

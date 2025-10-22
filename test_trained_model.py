@@ -434,7 +434,7 @@ print(f"Observation mode: {env.sim.obs_mode}")
 
 print(f"\n=== Visualizing Robot Gait ===")
 
-for step in range(2000):  # Max steps per episode
+for step in range(100):  # Max steps per episode (matches new env length)
     # mujoco.mj_step(model, data)
     action, _ = model.predict(obs, deterministic=True)
     # Ensure action shape is (num_actuators,)
@@ -457,10 +457,8 @@ for step in range(2000):  # Max steps per episode
     else:
         observations_log.append([float('nan')] * obs_dim)
     
-    # Render the robot (only if visualization is enabled)
-    if not args.no_vis:
-        env.render()
-        time.sleep(0.0005)  # Slow down for better viewing
+    # Rendering is now handled internally by the simulator when visualize=True
+    # No external env.render() or time.sleep() needed
     
     # Collect frames for video saving (if enabled)
     if args.save_video:

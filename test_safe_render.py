@@ -29,9 +29,10 @@ try:
         except Exception as e:
             print(f"Error getting position: {e}")
         
-        # Try rendering (with error handling)
+        # Rendering is now handled internally by the simulator when visualize=True
+        # The following is for offscreen frame testing only (not for user visualization)
         try:
-            frame = env.render(mode='rgb_array')  # Get frame without displaying
+            frame = env.render(mode='rgb_array')  # Offscreen test only
             if frame is not None and step % 10 == 0:
                 print(f"Got frame shape: {frame.shape}")
         except Exception as e:
