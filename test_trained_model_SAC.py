@@ -394,9 +394,11 @@ else:
 
 # Load the trained model
 model = SAC.load(model_path)
+# Set the max episode steps
+max_episode_steps = 50
 # interesting post physics etc 20250929_134907
 # different configuration doesn't experience same physics freakout: ppo_tensegrity_gait_20250930_091454
-env = TensegrityEnv(visualize=not args.no_vis)  # Visualization controlled by command line flag
+env = TensegrityEnv(visualize=not args.no_vis,max_episode_steps=max_episode_steps)  # Visualization controlled by command line flag
 
 print(f"Testing trained model: {os.path.basename(model_path)}")
 print("Testing trained model with visualization..." if not args.no_vis else "Testing trained model without visualization...")
@@ -438,7 +440,7 @@ print(f"Observation mode: {env.sim.obs_mode}")
 
 print(f"\n=== Visualizing Robot Gait ===")
 
-for step in range(1000):  # Max steps per episode
+for step in range(max_episode_steps):  # Max steps per episode
     # mujoco.mj_step(model, data)
     action, _ = model.predict(obs, deterministic=True)
     # Ensure action shape is (num_actuators,)

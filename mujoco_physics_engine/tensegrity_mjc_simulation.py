@@ -679,7 +679,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         if controls is not None:
             if hasattr(self, 'prev_controls') and self.prev_controls is not None:
                 try:
-                    action_smooth_penalty = -0.05 * float(np.sum(np.abs(controls - self.prev_controls)))
+                    action_smooth_penalty = -1.0 * float(np.sum(np.abs(controls - self.prev_controls)))
                 except Exception:
                     action_smooth_penalty = 0.0
             self.prev_controls = controls.copy()
@@ -697,7 +697,8 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
             + action_smooth_penalty
         )
         # Final reward clipping to keep critic stable
-        reward = float(np.clip(reward_raw, -40.0, 40.0))
+        # reward = float(np.clip(reward_raw, -40.0, 40.0))
+        reward = float(reward_raw)
         
         # # Calculate total forward distance reward
         # if hasattr(self, 'prev_pos') and self.prev_pos is not None:
