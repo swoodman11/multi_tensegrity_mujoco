@@ -6,7 +6,7 @@ import psutil
 import json
 from datetime import datetime
 from pathlib import Path
-from tensegrity_env import TensegrityEnv
+from tensegrity_env_config_1 import TensegrityEnv
 from stable_baselines3 import PPO
 from stable_baselines3 import SAC
 from stable_baselines3 import TD3
@@ -84,10 +84,10 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
         print("\n1️⃣ Environment Setup...")
         start_time = time.time()
         
-        env = TensegrityEnv(visualize=False, max_episode_steps=50)  # No visualization for GPU training
+        env = TensegrityEnv(visualize=False)  # No visualization for GPU training
         
         # CRITICAL validation per coding guidelines
-        expected_obs_dim = 96  # From coding guidelines
+        expected_obs_dim = 51  # From coding guidelines now 141? was 96, now 51 for 1
         actual_obs_dim = env.observation_space.shape[0]
         
         if actual_obs_dim != expected_obs_dim:
@@ -110,45 +110,17 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
         start_time = time.time()
         
         # Your exact roll_sequence from pretraining.py
-        roll_sequence = np.array([
-        [1.0, 1.0, 0.1, 1.0, 1.0, 0.1,   0.1, 0.8, 0.0, 1.0, 1.0, 0.0], #start 1=b,2=r,3=g
-        [0.0, 1.0, 1.0, 0.0, 0.8, 0.1,   1.0, 0.1, 1.0, 1.0, 0.1, 1.0],
-        [1.0, 0.1, 1.0, 1.0, 0.1, 1.0,   0.0, 0.1, 0.8, 0.0, 1.0, 1.0],
-        [1.0, 1.0, 0.0, 0.8, 0.1, 1.0,   1.0, 1.0, 0.8, 1.0, 1.0, 0.1],
-        [1.0, 1.0, 0.0, 0.8, 0.1, 1.0,   1.0, 1.0, 0.8, 1.0, 1.0, 0.1],
-        [1.0, 0.1, 0.1, 1.0, 0.1, 0.1,   1.0, 0.8, 0.1, 1.0, 1.0, 0.0],
-        [1.0, 0.5, 0.1, 1.0, 0.4, 0.1,   0.1, 0.8, 0.0, 1.0, 1.0, 0.5],
-        [0.5, 0.5, 1.0, 1.0, 0.4, 0.1,   0.1, 0.8, 0.0, 0.5, 1.0, 1.0],
-        [0.5, 0.5, 1.0, 1.0, 0.4, 0.1,   0.1, 0.8, 0.0, 0.5, 1.0, 1.0],
-        [0.5, 0.5, 1.0, 1.0, 0.4, 0.8,   0.1, 0.8, 0.8, 0.5, 1.0, 1.0],
-        [0.5, 0.1, 1.0, 0.1, 0.4, 1.0,   0.1, 0.8, 1.0, 0.5, 0.5, 1.0], #6,3 this and next two were 0.4
-        [0.5, 0.1, 1.0, 0.1, 0.4, 0.8,   0.1, 0.8, 0.8, 0.5, 0.5, 1.0], #1 was 0.5...did this fuck it up?
-        [0.5, 0.1, 1.0, 0.1, 0.4, 0.8,   0.1, 0.8, 0.8, 0.5, 0.5, 1.0], #10 was 1.0
-        [0.5, 0.5, 1.0, 0.1, 0.4, 0.8,   0.1, 0.8, 0.8, 0.5, 1.0, 1.0],
-        [0.5, 0.5, 1.0, 0.1, 0.4, 0.8,   0.1, 0.8, 0.8, 0.5, 1.0, 1.0],
-        [0.5, 0.5, 1.0, 0.1, 0.4, 0.8,   0.1, 0.8, 0.8, 0.5, 1.0, 1.0], #1=g,2=b,3=r by here and stable
-        [0.5, 0.5, 1.0, 0.4, 0.4, 0.4,   0.4, 0.8, 0.4, 0.5, 1.0, 1.0],
-        [0.5, 0.5, 1.0, 0.8, 0.4, 0.2,   0.8, 0.8, 0.2, 0.5, 1.0, 1.0],
-        [1.0, 0.5, 1.0, 1.0, 0.4, 0.1,   1.0, 0.8, 0.1, 1.0, 1.0, 1.0],
-        [1.0, 0.1, 1.0, 1.0, 0.0, 0.1,   1.0, 0.0, 0.1, 1.0, 1.0, 1.0],
-        [1.0, 0.1, 1.0, 0.1, 0.6, 0.1,   0.1, 0.0, 0.6, 1.0, 0.7, 1.0],
-        [1.0, 0.1, 1.0, 0.6, 0.6, 0.1,   0.6, 0.0, 0.6, 1.0, 0.7, 1.0],
-        [1.0, 0.1, 1.0, 0.6, 0.6, 0.1,   0.6, 0.0, 0.6, 1.0, 0.7, 1.0], #1=r,2=g,3=b
-        [0.4, 0.4, 1.0, 0.6, 0.6, 0.1,   0.6, 0.0, 0.6, 1.0, 0.7, 1.0],
-        [0.1, 1.0, 1.0, 0.6, 0.6, 0.1,   0.6, 0.0, 0.6, 1.0, 0.7, 1.0],
-        [0.1, 1.0, 1.0, 0.6, 0.6, 0.1,   0.6, 0.0, 0.6, 1.0, 0.7, 1.0], #1=b,2=r,3=g
-        [0.5, 1.0, 1.0, 0.6, 0.6, 0.5,   0.6, 0.5, 0.6, 1.0, 0.7, 1.0], #bring to neutral?
-        [1.0, 1.0, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-        [1.0, 1.0, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-        [1.0, 1.0, 1.0, 1.0, 1.0, 1.0,   1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
-        [0.5, 0.5, 0.5, 0.5, 0.5, 0.5,   0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
-        [1.0, 1.0, 0.1, 1.0, 1.0, 0.1,   0.1, 0.8, 0.0, 1.0, 1.0, 0.0], #start 1=b,2=r,3=g
-        ])
+        roll_sequence = np.array([[0.0, 1.0, 0.1, 0.0, 1.0, 1.0], #6-step quasi static
+                                  [0.8, 0.1, 1.0, 1.0, 0.1, 1.0], 
+                                  [0.8, 0.1, 0.0, 1.0, 1.0, 0.0], 
+                                  [0.1, 1.0, 1.0, 0.1, 1.0, 1.0], 
+                                  [0.1, 0.0, 1.0, 1.0, 0.0, 1.0],
+                                  [0.8, 1.0, 0.1, 1.0, 1.0, 0.1]])
         
         print(f"   Using roll sequence: {roll_sequence.shape[0]} steps × {roll_sequence.shape[1]} actuators")
         
         # Validate actuator count per coding guidelines
-        expected_actuators = 12
+        expected_actuators = 6
         if roll_sequence.shape[1] != expected_actuators:
             print(f"⚠️  ACTUATOR MISMATCH: roll_sequence has {roll_sequence.shape[1]} but expected {expected_actuators}")
         
@@ -321,7 +293,7 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
         
 
         # Set up evaluation environment (no render)
-        eval_env = TensegrityEnv(visualize=False, max_episode_steps=50)
+        eval_env = TensegrityEnv(visualize=False)
 
         eval_callback = EvalCallback(
             eval_env,
@@ -354,7 +326,7 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
         
         # Generate timestamp for unique model naming
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        save_path = f"models/gpu/sac_gpu_pretraining_{config_name}_{timestamp}"
+        save_path = f"models/gpu/sac_gpu_pretraining_1_tenseg_{config_name}_{timestamp}"
         Path("models/gpu").mkdir(parents=True, exist_ok=True)
         model.save(save_path)
         
@@ -524,7 +496,7 @@ def main():
         
     elif "4090" in gpu_name:
         selected_configs = {k: v for k, v in configs.items() if "rtx4090" in k}
-        timesteps = 3000000  # Standard for RTX 4090, was 200000
+        timesteps = 300000  # Standard for RTX 4090, was 200000
         cycles = 2000      # Large demonstration cycles
         print(f"🚀 RTX 4090 detected! Using optimized configurations for {gpu_memory_gb:.1f}GB VRAM")
         
@@ -538,7 +510,7 @@ def main():
     else:
         # Default to RTX 4090 large as requested
         selected_configs = {"rtx4090_large": configs["rtx4090_large"]}
-        timesteps = 3000000
+        timesteps = 300000
         cycles = 2000 #was 1000
         print(f"⚠️  Unknown/unsupported GPU '{gpu_name}' ({gpu_memory_gb:.1f}GB)")
         print(f"    Defaulting to RTX 4090 Large configuration as requested")
