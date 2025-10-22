@@ -259,207 +259,6 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         end_pts = self.get_endpts()
         robot_pos = end_pts.mean(axis=0)  # Use the mean of end points as the robot's position
 
-        # # Calculate forward velocity reward
-        # velocity_reward = 0.0
-        # # print("Robot position: ", self.prev_pos)
-        # if hasattr(self, 'prev_pos') and self.prev_pos is not None:
-        #     # Calculate XY plane displacement
-        #     xy_displacement = robot_pos[:2] - self.prev_pos[:2]  # [x, y] only
-        #     xy_speed = np.linalg.norm(xy_displacement) / self.dt
-            
-        #     velocity_reward = xy_speed # Reward any XY movement with large magnitude
-
-        # if hasattr(self, 'prev_pos') and self.prev_pos is not None:
-        #     # Calculate XY plane displacement
-        #     xy_displacement = robot_pos[:2] - self.prev_pos[:2]  # [x, y] only
-        #     # Reward positive forward velocity (assuming +x is forward direction)
-        #     forward_velocity = xy_displacement[0] / self.dt  # x-component of velocity
-        #     if forward_velocity > 0:
-        #         velocity_reward += forward_velocity # Additional reward for forward movement
-        
-        # Distance-based reward removed (avoid camping far from origin)
-
-        # penalties = self.calculate_anti_exploit_penalties(robot_pos, controls) * 0.0
-
-        # reward = (cumulative_rotation_reward + consistent_direction_reward + displacement_progress_reward
-        #             + control_penalty_value)
-
-        # reward_components = {
-        #     'cumulative_rotation_reward': cumulative_rotation_reward,
-        #     'consistent_direction_reward': consistent_direction_reward,
-        #     'displacement_progress_reward': displacement_progress_reward,
-        #     'velocity_reward': velocity_reward,
-        #     'distance_reward': distance_reward,
-        # }
-        # penalty_components = {f'control_{k}': v for k, v in control_penalty_components.items()}
-
-        # # 7. Bookkeeping
-        # self.prev_pos = robot_pos.copy()
-        # self.step_count = getattr(self, 'step_count', 0) + 1
-
-        # observation = self.get_observation()
-        # done = False
-        # # Optional diagnostics
-        # try:
-        #     actuated_lengths = self._get_actuated_cable_lengths()
-        #     rest_lengths = np.array([self.mjc_model.tendon_lengthspring[t, 0] for t in self.actuated_ids], dtype=np.float32)
-        # except Exception:
-        #     actuated_lengths = None
-        #     rest_lengths = None
-
-        # info = {
-        #     'reward_components': reward_components,
-        #     'penalty_components': penalty_components,
-        #     **reward_components,
-        #     **penalty_components,
-        #     'control_penalty_total': control_penalty_value,
-        #     'controls': controls.copy(),               # PID control signals [-1,1]
-        #     'action': desired_norms.copy(),            # applied normalized targets [0,1]
-        #     'actuated_lengths': actuated_lengths,      # current measured cable lengths (m)
-        #     'rest_lengths': rest_lengths,              # tendon rest lengths after motor update (m)
-        #     'step_count': self.step_count,
-        # }
-        # return observation, reward, done, info
-        #     current_imu_grav = self._get_IMU_gravity_vectors()
-        #     # Calculate change in orientation (gravity vector change)
-        #     # Reshape to get individual IMU gravity vectors (assuming 6 IMUs x 3 components)
-        #     current_imu_gravs = current_imu_grav.reshape(6, 3)
-        #     prev_imu_gravs = self.prev_imu_grav.reshape(6, 3)
-            
-        #     # Focus on the X-component of the first IMU (t1_r01) for forward roll direction
-        #     current_gravity_x = current_imu_gravs[0, 0]
-        #     prev_gravity_x = prev_imu_gravs[0, 0]
-        #     orientation_change = current_gravity_x - prev_gravity_x  # Signed change to keep direction
-            
-        #     # Reward only positive changes (forward roll) above threshold
-        #     if orientation_change > 0.57:  # Approximately 30 degrees change in roll (sin(30°) ≈ 0.5)
-        #         imu_reward = orientation_change * 10.0  # Scale factor for reward magnitude
-            
-        #     self.prev_imu_grav = current_imu_grav.copy()
-        # else:
-        #     self.prev_imu_grav = self._get_IMU_gravity_vectors()
-
-        # Old IMU Reward Term
-        # # # Track cumulative roll for continuous rolling reward
-        # imu_reward = 0.0
-        # if hasattr(self, 'prev_imu_grav'):
-        #     current_imu_grav = self._get_IMU_gravity_vectors()
-        #     current_imu_gravs = current_imu_grav.reshape(6, 3)
-        #     prev_imu_gravs = self.prev_imu_grav.reshape(6, 3)
-            
-        #     # Calculate roll angle from gravity vector (atan2 gives signed angle)
-        #     current_roll = np.arctan2(current_imu_gravs[0, 1], current_imu_gravs[0, 2])  # Y/Z components
-        #     prev_roll = np.arctan2(prev_imu_gravs[0, 1], prev_imu_gravs[0, 2])
-            
-        #     # Handle angle wrapping around ±π
-        #     roll_change = current_roll - prev_roll
-        #     if roll_change > np.pi:
-        #         roll_change -= 2*np.pi
-        #     elif roll_change < -np.pi:
-        #         roll_change += 2*np.pi
-            
-        #     # Reward forward rolling (positive direction) with magnitude-based scaling
-        #     if roll_change > 0:
-        #         imu_reward = roll_change * 50.0  # Scale factor (radians to reward)
-        #         # Bonus for sustained rolling speed
-        #         if hasattr(self, 'roll_velocity'):
-        #             self.roll_velocity = 0.9 * self.roll_velocity + 0.1 * abs(roll_change)
-        #             if self.roll_velocity > 0.05:  # ~3 degrees/step sustained
-        #                 imu_reward *= 1.5
-        #         else:
-        #             self.roll_velocity = abs(roll_change)
-            
-        #     self.prev_imu_grav = current_imu_grav.copy()
-        # else:
-        #     self.prev_imu_grav = self._get_IMU_gravity_vectors()
-        #     self.roll_velocity = 0.0
-        
-        # Old IMU Reward Term
-        # # Reward coordinated rolling across multiple IMUs
-        # imu_reward = 0.0
-        # if hasattr(self, 'prev_imu_grav'):
-        #     current_imu_grav = self._get_IMU_gravity_vectors()
-        #     current_imu_gravs = current_imu_grav.reshape(6, 3)
-        #     prev_imu_gravs = self.prev_imu_grav.reshape(6, 3)
-            
-        #     # Calculate orientation changes for multiple IMUs
-        #     orientation_changes = []
-        #     for i in range(min(3, current_imu_gravs.shape[0])):  # Use first 3 IMUs
-        #         # Magnitude of gravity vector change (more robust than single component)
-        #         grav_change = np.linalg.norm(current_imu_gravs[i] - prev_imu_gravs[i])
-        #         orientation_changes.append(grav_change)
-            
-        #     avg_change = np.mean(orientation_changes)
-        #     change_consistency = 1.0 - np.std(orientation_changes)  # Reward synchronized motion
-            
-        #     # Reward threshold lowered for realistic step-by-step rolling
-        #     if avg_change > 0.05:  # ~3 degree equivalent change
-        #         base_reward = avg_change * 20.0
-        #         coordination_bonus = max(0, change_consistency) * 10.0
-        #         imu_reward = base_reward + coordination_bonus
-                
-        #         # Additional bonus for forward direction (check center of mass motion)
-        #         robot_pos = self.sim.data.qpos[:3]  # Assuming first 3 are robot position
-        #         if hasattr(self, 'prev_robot_pos'):
-        #             forward_motion = robot_pos[0] - self.prev_robot_pos[0]  # X-direction
-        #             if forward_motion > 0:
-        #                 imu_reward *= 1.3  # Bonus for forward progress
-        #         self.prev_robot_pos = robot_pos.copy()
-            
-        #     self.prev_imu_grav = current_imu_grav.copy()
-        # else:
-        #     self.prev_imu_grav = self._get_IMU_gravity_vectors()
-        #     self.prev_robot_pos = self.sim.data.qpos[:3].copy()
-
-        # # Reward based on angular velocity patterns consistent with rolling
-        # imu_reward = 0.0
-        # if hasattr(self, 'prev_imu_grav') and hasattr(self, 'prev_prev_imu_grav'):
-        #     current_imu_grav = self._get_IMU_gravity_vectors()
-        #     current_imu_gravs = current_imu_grav.reshape(6, 3)
-        #     prev_imu_gravs = self.prev_imu_grav.reshape(6, 3)
-        #     prev_prev_imu_gravs = self.prev_prev_imu_grav.reshape(6, 3)
-            
-        #     # Estimate angular velocity from gravity vector changes
-        #     # Use first IMU for primary rolling axis detection
-        #     grav_vel = (current_imu_gravs[0] - prev_imu_gravs[0])
-        #     grav_accel = (current_imu_gravs[0] - 2*prev_imu_gravs[0] + prev_prev_imu_gravs[0])
-            
-        #     # Rolling motion should show periodic gravity changes
-        #     angular_speed = np.linalg.norm(grav_vel)
-        #     angular_smoothness = 1.0 / (1.0 + np.linalg.norm(grav_accel))  # Prefer smooth motion
-            
-        #     # Reward range for realistic rolling speeds
-        #     if 0.02 < angular_speed < 0.2:  # Between 1-11 degrees/step
-        #         speed_reward = angular_speed * 25.0
-        #         smoothness_reward = angular_smoothness * 15.0
-        #         imu_reward = speed_reward + smoothness_reward
-                
-        #         # Check for consistent rolling direction over time
-        #         if hasattr(self, 'rolling_direction_history'):
-        #             current_direction = np.sign(np.dot(grav_vel, [1, 0, 0]))  # X-axis preference
-        #             self.rolling_direction_history.append(current_direction)
-        #             if len(self.rolling_direction_history) > 10:
-        #                 self.rolling_direction_history.pop(0)
-                    
-        #             # Bonus for consistent rolling direction
-        #             direction_consistency = abs(np.mean(self.rolling_direction_history))
-        #             if direction_consistency > 0.6:  # 60% consistency
-        #                 imu_reward *= (1.0 + direction_consistency)
-        #         else:
-        #             self.rolling_direction_history = []
-            
-        #     # Update history
-        #     self.prev_prev_imu_grav = self.prev_imu_grav.copy()
-        #     self.prev_imu_grav = current_imu_grav.copy()
-        # else:
-        #     current_imu_grav = self._get_IMU_gravity_vectors()
-        #     if hasattr(self, 'prev_imu_grav'):
-        #         self.prev_prev_imu_grav = self.prev_imu_grav.copy()
-        #     else:
-        #         self.prev_prev_imu_grav = current_imu_grav.copy()
-        #     self.prev_imu_grav = current_imu_grav.copy()
-        #     self.rolling_direction_history = []
-
         # Endpoint Height Reward: anti-glide via turnover, duty cycle, and lift transitions
         end_pts_z = end_pts[:, 2]
         
@@ -538,7 +337,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
             1.0 * lifted_duty_score +       # discourage keeping the same ends always lifted
             6.0 * lift_transition_reward    # stronger reward for lifting events
         )
-        endpoint_height_reward = float(np.clip(endpoint_height_reward, -50.0, 50.0))
+        # endpoint_height_reward = float(np.clip(endpoint_height_reward, -50.0, 50.0))
 
         # Option 2: Lifted centroid XY movement (no contact gating, any direction)
         lifted_centroid_xy_reward = 0.0
@@ -631,45 +430,10 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         lift_dwell_penalty = max(lift_dwell_penalty, -1.0)
         self.prev_end_pts = end_pts.copy()
 
-        # imu_x_rotation_reward = self._reward_x_axis_rotation()
+        velocity_reward = self._calculate_velocity_reward_v2(robot_pos)
 
-        # imu_x_rotation_speed_reward = self._reward_x_axis_desired_rotation_speed(desired_speed=0.5)
-
-        # Weighting individual reward components
-        # velocity_reward *= 0.0
-        # distance_reward *= 0.0 
-        # imu_x_rotation_reward *= 10.0 #as 1 one roll
-        # imu_x_rotation_speed_reward *= 10.0 #as 10 one roll
-        # penalties *= 0.0  #Making this 1 did eliminate the oscillations, which is good
-
-        # reward = velocity_reward + distance_reward + penalties + imu_x_rotation_reward + imu_x_rotation_speed_reward
-        
-        # In your sim_step() method, replace the oscillating rewards:
-
-        # OLD - Promotes oscillations
-        # imu_x_rotation_reward = self._reward_x_axis_rotation()
-        # imu_x_rotation_speed_reward = self._reward_x_axis_desired_rotation_speed(desired_speed=0.5)
-
-
-        # NOTE: Hey Zac, i thought we weren't incentivizing actual rolling, so the jittering stopped but weird behaviour here
-        # NEW - Promotes actual rolling
-        # cumulative_rotation_reward = self._reward_cumulative_x_axis_rotation()
-        # consistent_direction_reward = self._reward_consistent_rolling_direction(window_size=15)
-        # displacement_progress_reward = self._reward_angular_displacement_progress(target_rotations_per_episode=1)
-
-        # Weighting - adjust based on what works best
-        # cumulative_rotation_reward *= 5.0      # Reward total rotation progress
-        # consistent_direction_reward *= 3.0     # Reward consistent direction
-        # displacement_progress_reward *= 10.0    # Reward actual angular displacement
-
-        # reward = (velocity_reward + distance_reward + penalties*1.0 + 
-        #   cumulative_rotation_reward + consistent_direction_reward + displacement_progress_reward)
-        
-        # reward = (penalties*1.0 + 
-        #   cumulative_rotation_reward + consistent_direction_reward + displacement_progress_reward)
-        # Compose final reward (remove total distance reward; emphasize continuous progress)
-        lifted_centroid_xy_reward_weight = 5.0
-        grounded_centroid_xy_reward_weight = 14.0
+        lifted_centroid_xy_reward_weight = 10.0
+        grounded_centroid_xy_reward_weight = 7.0
         # Glide-specific hover penalty gating: require sustained stall and few lifts
         lifted_count = int(np.sum(lifted_mask))
         hover_weight = 0.0 if (self.stall_streak < 5 or lifted_count >= 2) else 3.0
@@ -683,13 +447,14 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
                 except Exception:
                     action_smooth_penalty = 0.0
             self.prev_controls = controls.copy()
-        action_smooth_penalty = max(action_smooth_penalty, -1.0)
+        action_smooth_penalty = max(action_smooth_penalty, -4.0)
         reward_raw = (
             endpoint_height_reward
             + lifted_centroid_xy_reward_weight * lifted_centroid_xy_reward
             + grounded_centroid_xy_reward_weight * grounded_centroid_xy_reward
             + 24.0 * com_step_progress
             + 7.0 * lifted_swing_reward
+            + velocity_reward
             + stall_penalty
             + resume_bonus
             + lift_dwell_penalty
@@ -733,6 +498,93 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         }
         
         return observation, reward, done, info
+
+    def _calculate_velocity_reward_v2(self, robot_pos):
+        """
+        Velocity reward using direction variance over a sliding window.
+        Rewards low variance (consistent direction) and target speed achievement.
+        """
+        velocity_reward = 0.0
+        
+        if not hasattr(self, 'prev_pos') or self.prev_pos is None:
+            self.prev_pos = robot_pos.copy()
+            self.velocity_window = []  # Store recent velocities (position deltas)
+            self.direction_angles = []  # Store recent heading angles
+            return 0.0
+        
+        # Calculate current velocity
+        xy_displacement = robot_pos[:2] - self.prev_pos[:2]
+        velocity = xy_displacement / self.dt
+        speed = np.linalg.norm(velocity)
+        
+        # Store velocity in sliding window (15 steps = ~1.5 seconds)
+        self.velocity_window.append(velocity.copy())
+        if len(self.velocity_window) > 15:
+            self.velocity_window.pop(0)
+        
+        # Calculate heading angle if moving
+        if speed > 0.05:  # Minimum speed threshold
+            heading_angle = np.arctan2(velocity[1], velocity[0])  # Range: [-π, π]
+            self.direction_angles.append(heading_angle)
+            if len(self.direction_angles) > 15:
+                self.direction_angles.pop(0)
+        
+        # Calculate reward if we have enough history
+        if len(self.velocity_window) >= 5:
+            # Average speed over window
+            speeds = [np.linalg.norm(v) for v in self.velocity_window]
+            avg_speed = np.mean(speeds)
+            
+            # Calculate direction consistency
+            if len(self.direction_angles) >= 5:
+                # Use circular variance for angles
+                angles = np.array(self.direction_angles)
+                
+                # Circular mean direction
+                mean_sin = np.mean(np.sin(angles))
+                mean_cos = np.mean(np.cos(angles))
+                mean_angle = np.arctan2(mean_sin, mean_cos)
+                
+                # Circular variance (0 = all same direction, 1 = random directions)
+                resultant_length = np.sqrt(mean_sin**2 + mean_cos**2)
+                circular_variance = 1.0 - resultant_length
+                
+                # Convert to consistency score (0 = inconsistent, 1 = highly consistent)
+                consistency_score = 1.0 - circular_variance
+                consistency_score = np.clip(consistency_score, 0.0, 1.0)
+            else:
+                consistency_score = 0.5  # Neutral if insufficient data
+            
+            # Speed-based reward (zone system)
+            if avg_speed < 0.2:
+                # Slow zone: encourage any movement
+                speed_reward = avg_speed * 5.0  # Up to 1.0
+            elif avg_speed < 0.5:
+                # Acceleration zone: reward approaching target
+                # Linear ramp from 1.0 to 8.0
+                speed_reward = 1.0 + (avg_speed - 0.2) / 0.3 * 7.0
+            elif avg_speed < 0.7:
+                # Target zone: maximum reward
+                speed_reward = 8.0
+            else:
+                # High speed zone: slight penalty for excessive speed
+                speed_reward = 8.0 - 2.0 * (avg_speed - 0.7)
+            
+            # Consistency bonus (scaled by speed)
+            # Only apply consistency when actually moving
+            if avg_speed > 0.1:
+                consistency_bonus = consistency_score * 10.0
+            else:
+                consistency_bonus = 0.0
+            
+            # Combined reward
+            velocity_reward = speed_reward + consistency_bonus
+            
+            # Special bonus for sustained performance
+            if avg_speed >= 0.5 and consistency_score > 0.85:
+                velocity_reward += 5.0  # Sustained locomotion bonus
+        
+        return velocity_reward
 
     def get_robot_position(self):
         """

@@ -412,16 +412,16 @@ def gpu_optimized_configs():
                 activation_fn=torch.nn.ReLU
             )
         },
-        "rtx4090_large": {
-            "learning_rate": 3e-4,
-            "batch_size": 2048,
-            "gamma": 0.999,
-            "ent_coef": 0.1,
-            "policy_kwargs": dict(
-                net_arch=[2048, 1024, 512, 256],  # was [256,256,128]Shared for all networks in SAC
-                activation_fn=torch.nn.ReLU
-            )
-        },
+        # "rtx4090_large": {
+        #     "learning_rate": 3e-4,
+        #     "batch_size": 2048,
+        #     "gamma": 0.999,
+        #     "ent_coef": 0.1,
+        #     "policy_kwargs": dict(
+        #         net_arch=[2048, 1024, 512, 256],  # was [256,256,128]Shared for all networks in SAC
+        #         activation_fn=torch.nn.ReLU
+        #     )
+        # },
         "rtx4090_ultra": {
             "learning_rate": 3e-4, #was 2e-4
             "batch_size": 2048,
@@ -524,8 +524,8 @@ def main():
         
     elif "4090" in gpu_name:
         selected_configs = {k: v for k, v in configs.items() if "rtx4090" in k}
-        timesteps = 30000  # Standard for RTX 4090, was 200000
-        cycles = 50      # Large demonstration cycles
+        timesteps = 60000  # Standard for RTX 4090, was 200000
+        cycles = 100      # Large demonstration cycles
         print(f"🚀 RTX 4090 detected! Using optimized configurations for {gpu_memory_gb:.1f}GB VRAM")
         
     elif "2080" in gpu_name and system_ram_gb >= 24:
