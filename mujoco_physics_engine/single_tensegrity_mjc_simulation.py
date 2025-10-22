@@ -1,76 +1,39 @@
 """Single tensegrity MuJoCo simulator.
 
-This module provides a light-weight, modular version of the multi-tensegrity
-simulator focused on a single 3-bar tensegrity robot described by
-`xml_models/3bar_new_platform_all_cables.xml`.
+This module provides a single 3-bar tensegrity robot simulator for the
+`xml_models/3bar_new_platform_all_cables.xml` model.
 
-Key design goals:
- - Only 6 actuated (active) cables: those with stiffness=1000 in the XML
- - Remaining (passive) cables with stiffness=20000 are left un-actuated
- - Actions are normalized target cable lengths in [0,1]
- - Modular observation pipeline (components can be toggled)
- - Modular reward pipeline (terms exposed & logged)
- - Minimal external dependencies (reuse existing PID, DCMotor, AbstractMuJoCoSimulator)
- - Explicit plotting utilities for actions, observations, and reward terms
- - Easily extensible for RL integration (Gymnasium wrapper can call reset()/step())
-
-NOTE ON SITE NAMES:
-The original dual-robot simulator used prefixed site names (t1_/t2_). The
-single XML (`3bar_new_platform_all_cables.xml`) does NOT use these prefixes.
-We therefore map the first six stiffness=1000 tendons to actuators and build
-their site pairs directly by reading tendon definitions.
-
-If you later update the XML naming convention, adjust `_discover_cable_sites`.
+Key specifications:
+- 6 actuated cables (tendons td_0 to td_5 with default stiffness 100000)
+- 9 passive cables (tendons td_6 to td_14 with explicit stiffness values)
+- 3 rods for IMU sensing (r01, r23, r45)
+- Observation dimension: flexible (default 27 = 6 lengths + 6 rates + 6 prev_action + 9 IMU)
+- Actions: normalized target cable lengths in [0,1]
+- Reward: copied from dual robot with dimension adjustments
 """
 
-from __future__ import annotations
-
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
-
-import json
+from typing import Optional, Tuple
 import numpy as np
 import mujoco
+import time
 
 from .mujoco_simulation import AbstractMuJoCoSimulator
 from .pid import PID
 from .cable_motor import DCMotor
 
-from mujoco_physics_engine.cable_motor import DCMotor
-from mujoco_physics_engine.mujoco_simulation import AbstractMuJoCoSimulator
-from mujoco_physics_engine.pid import PID
 
-
-def debug_print(msg: str, enabled: bool = False):
+def debug_print(msg: str, filename: str = "single_tensegrity_mjc_simulation.py", enabled: bool = False):
+    """Print debug messages with filename prefix if debug is enabled"""
     if enabled:
-        print(f"[single_sim] {msg}")
-
-
-@dataclass
-class ObservationConfig:
-    include_imu: bool = True
-    include_prev_action: bool = True
-    include_cable_lengths: bool = True
-    include_cable_length_rates: bool = True
-
-
-@dataclass
-class RewardTerms:
-    # Each term returns float
-    terms: Dict[str, float] = field(default_factory=dict)
-
-    def total(self) -> float:
-        return float(sum(self.terms.values()))
-
-    def add(self, name: str, value: float):
-        self.terms[name] = float(value)
+        print(f"DEBUG {filename}: {msg}")
 
 
 class SingleTensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
     """Single tensegrity simulator with 6 actuated cables.
-
+    
     Action: np.ndarray shape (6,) normalized target lengths in [0,1].
+    Observation: np.ndarray shape (obs_dim,) where obs_dim is calculated from components.
     """
 
     def __init__(
@@ -79,361 +42,553 @@ class SingleTensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         visualize: bool = True,
         render_size: Tuple[int, int] = (720, 720),
         render_fps: int = 20,
-        pid_kp: float = 2.0,
-        pid_ki: float = 0.0,
-        pid_kd: float = 1.0,
+        obs_dim: Optional[int] = None,  # If None, calculate from components
+        debug_enabled: bool = False,
+        controller_kp: float = 10.0,
+        controller_ki: float = 0.2,
+        controller_kd: float = 2.0,
         min_cable_length: float = 0.6,
         max_cable_length: float = 1.6,
-        debug_enabled: bool = False,
-        debug_max_steps: int = 20,
-        obs_config: Optional[ObservationConfig] = None,
+        control_penalty_cap: float = 100.0,
+        render_pause: float = 0.01,  # Pause between renders in seconds (for visualization speed control)
     ):
         super().__init__(Path(xml_path), visualize, render_size, render_fps)
+        
         self.debug_enabled = debug_enabled
-        self.debug_max_steps = max(0, int(debug_max_steps))
+        self.control_penalty_cap = float(control_penalty_cap)
         self.min_cable_length = min_cable_length
         self.max_cable_length = max_cable_length
-        self.obs_config = obs_config or ObservationConfig()
-        print(self.dt)
-        if not hasattr(self, 'dt'):
-            self.dt = self.model.opt.timestep
-            print(f"[single_sim] Warning: dt not set in base class; using model.opt.timestep={self.dt}")
-
-        # Discover cable sites & stiffness to identify actuated vs passive
-        self.cable_sites: List[Tuple[str, str]] = []  # index -> (siteA, siteB)
-        self.cable_stiffness: List[float] = []       # index -> stiffness
-        self._discover_cable_sites()
-
-        actuated_cable_mapping = {
-        6: ("s_3_5", "s_5_3"),    # td_6 - Node 3 ↔ Node 5
-        7: ("s_1_3", "s_3_1"),    # td_7 - Node 1 ↔ Node 3  
-        8: ("s_1_5", "s_5_1"),    # td_8 - Node 1 ↔ Node 5
-        9: ("s_0_2", "s_2_0"),    # td_9 - Node 0 ↔ Node 2
-        10: ("s_0_4", "s_4_0"),   # td_10 - Node 0 ↔ Node 4
-        11: ("s_2_4", "s_4_2")    # td_11 - Node 2 ↔ Node 4
-        }
-
-        # Active (actuated) are those with stiffness approx 1000.0
-        self.actuated_ids = list(actuated_cable_mapping.keys())# was [i for i, k in enumerate(self.cable_stiffness) if abs(k - 1000.0) < 1e-3][:6], which gave [0,1,2,3,4,5]
-        if len(self.actuated_ids) < 6:
-            debug_print("WARNING: Fewer than 6 stiffness=1000 tendons found; check XML.", True)
+        self.render_pause = render_pause  # Store pause duration
+        
+        # NEEDS UPDATE: Verify these are the correct actuated tendon IDs for the single robot XML
+        # Based on XML analysis: td_0 to td_5 are the first 6 tendons with default stiffness 100000
+        self.actuated_ids = [0, 1, 2, 3, 4, 5]  # First 6 tendons are actuated
         self.n_actuators = len(self.actuated_ids)
-
-        # PID and motor for each actuator
-        self.pids: List[PID] = [PID(Kp=pid_kp, Ki=pid_ki, Kd=pid_kd, dt=self.dt, debug_enabled=debug_enabled) for _ in range(self.n_actuators)]
-        self.cable_motors: List[DCMotor] = [DCMotor(debug_enabled=debug_enabled) for _ in range(self.n_actuators)]
-
-        # Buffers
+        
+        # HARDCODED CABLE SITE PAIRS from XML analysis
+        # Mapping td_0 to td_5 to their site pairs
+        self.cable_sites = [
+            # td_0
+            ("s_3_b5", "s_b5_3"),
+            # td_1
+            ("s_1_b3", "s_b3_1"),
+            # td_2
+            ("s_5_b1", "s_b1_5"),
+            # td_3
+            ("s_0_b2", "s_b2_0"),
+            # td_4
+            ("s_4_b0", "s_b0_4"),
+            # td_5
+            ("s_2_b4", "s_b4_2"),
+        ]
+        
+        # PID controllers and DC motors for each actuator
+        self.pids = [
+            PID(Kp=controller_kp, Ki=controller_ki, Kd=controller_kd, dt=self.dt, debug_enabled=self.debug_enabled)
+            for _ in range(self.n_actuators)
+        ]
+        self.cable_motors = [DCMotor(debug_enabled=self.debug_enabled) for _ in range(self.n_actuators)]
+        
+        # Observation components (flexible configuration)
+        # Default: 6 cable_lengths + 6 cable_rates + 6 prev_action + 9 IMU (3 rods × 3D) = 27
+        self.obs_components = {
+            'cable_lengths': 6,  # normalized [0,1]
+            'cable_rates': 6,    # normalized rates
+            'prev_action': 6,    # previous action
+            'imu': 9,            # 3 rods × 3D gravity vectors
+        }
+        
+        # Calculate observation dimension
+        if obs_dim is None:
+            self.obs_dim = sum(self.obs_components.values())
+        else:
+            self.obs_dim = obs_dim
+        
+        # Rod names for IMU (3 rods in single robot)
+        self.imu_geom_names = ["r01", "r23", "r45"]
+        self.n_rods = len(self.imu_geom_names)
+        
+        # Endpoint sites (vertices s0-s5)
+        self.end_pts = ["s0", "s1", "s2", "s3", "s4", "s5"]
+        
+        # State tracking buffers
         self.prev_action = np.zeros(self.n_actuators, dtype=np.float32)
         self.prev_lengths = np.zeros(self.n_actuators, dtype=np.float32)
-        self.action_clip_violations = 0
-        self.first_clip_exception_raised = False
-        # Instrumentation buffers (grow per step)
-        self.diag_target_norm = []  # list of np.ndarray
-        self.diag_curr_length = []
-        self.diag_rest_length = []
-        self.diag_pid_u = []
-        self.diag_error = []
-        # Extra diagnostics
-        self.diag_true_tendon_length = []  # MuJoCo internal tendon length (path length)
-        self.diag_dl = []  # motor-applied delta rest length each step
+        self.prev_pos = None
+        self.prev_controls = None
+        self.step_count = 0
+        
+        # Viewer for real-time visualization (lazy-loaded in render())
+        self._viewer = None
+        
+        # Initialize visualization camera if needed
+        if self.visualize and hasattr(self, 'viewer') and self.viewer is not None:
+            self.viewer.cam.distance = 12.0  # Zoom out for single robot
+            self.viewer.cam.lookat[0] = 0.0
+        
+        debug_print(f"Initialized SingleTensegrityMuJoCoSimulator", "single_tensegrity_mjc_simulation.py", self.debug_enabled)
+        debug_print(f"  Actuators: {self.n_actuators}", "single_tensegrity_mjc_simulation.py", self.debug_enabled)
+        debug_print(f"  Observation dim: {self.obs_dim}", "single_tensegrity_mjc_simulation.py", self.debug_enabled)
+        debug_print(f"  Cable sites: {len(self.cable_sites)}", "single_tensegrity_mjc_simulation.py", self.debug_enabled)
 
-        # Build IMU geometry assumptions (use rod geoms present in single XML: r01, r23, r45)
-        self.imu_geom_names = ["r01", "r23", "r45"]
-
-        # Initialize
-        self.reset()
-        # Internal flag to disable nested component debug after threshold
-        self._child_debug_disabled = False
-
-    # ---------------------------------------------------------------------
-    # Model Introspection
-    # ---------------------------------------------------------------------
-    def _discover_cable_sites(self):
-        """Populate cable_sites and cable_stiffness from model tendon definitions.
-
-        For each spatial tendon, we extract the two site names. Single XML uses
-        names td_0 .. etc; we map their site references via mjModel.tendon_adr
-        and wrap references (2 sites per spatial tendon assumed).
-        """
-        model = self.mjc_model
-        for t_idx in range(model.ntendon):
-            # Stiffness from model.tendon_stiffness[t_idx]
-            stiff = float(model.tendon_stiffness[t_idx])
-            self.cable_stiffness.append(stiff)
-
-            # Sites in this tendon span: use the EFC address arrays
-            # Access via model.tendon_adr & model.wrap_obj / wrap_type sequence.
-            adr = model.tendon_adr[t_idx]
-            # For spatial tendon: sequence of site ids. We'll collect first & last site.
-            nwrap = model.tendon_num[t_idx]
-            site_ids = []
-            for w in range(nwrap):
-                obj_type = model.wrap_type[adr + w]
-                obj_id = model.wrap_objid[adr + w]
-                # 0 == site for mjtWrap (per MuJoCo docs)
-                if obj_type == mujoco.mjtWrap.mjWRAP_SITE:
-                    site_ids.append(obj_id)
-            if len(site_ids) >= 2:
-                sA = model.site(site_ids[0]).name
-                sB = model.site(site_ids[-1]).name
-                self.cable_sites.append((sA, sB))
-            else:
-                self.cable_sites.append(("", ""))
-
-    # ---------------------------------------------------------------------
-    # Core API
-    # ---------------------------------------------------------------------
-    def reset(self):  # noqa: D401
+    def reset(self):
+        """Reset simulator to initial state."""
         super().reset()
         self.forward()
-        # Recompute lengths
-        self.prev_lengths = self._get_actuated_lengths()
-        self.prev_action[:] = 0.0
+        
+        # Reset tracking variables
+        self.prev_lengths = self._get_actuated_cable_lengths()
+        self.prev_action = np.zeros(self.n_actuators, dtype=np.float32)
+        self.prev_pos = None
+        self.prev_controls = None
         self.step_count = 0
-        self.action_clip_violations = 0
-        self.first_clip_exception_raised = False
+        
+        # Reset reward tracking variables (matching dual robot)
+        if hasattr(self, 'ground_state'):
+            delattr(self, 'ground_state')
+        if hasattr(self, 'lift_state'):
+            delattr(self, 'lift_state')
+        if hasattr(self, 'prev_ground_mask'):
+            delattr(self, 'prev_ground_mask')
+        if hasattr(self, 'ground_duty_ema'):
+            delattr(self, 'ground_duty_ema')
+        if hasattr(self, 'lifted_duty_ema'):
+            delattr(self, 'lifted_duty_ema')
+        if hasattr(self, 'prev_lifted_mask'):
+            delattr(self, 'prev_lifted_mask')
+        if hasattr(self, 'prev_lifted_centroid_xy'):
+            delattr(self, 'prev_lifted_centroid_xy')
+        if hasattr(self, 'prev_grounded_centroid_xy'):
+            delattr(self, 'prev_grounded_centroid_xy')
+        if hasattr(self, 'low_speed_hist'):
+            delattr(self, 'low_speed_hist')
+        if hasattr(self, 'stall_streak'):
+            delattr(self, 'stall_streak')
+        if hasattr(self, 'high_speed_hist'):
+            delattr(self, 'high_speed_hist')
+        if hasattr(self, 'lift_streaks'):
+            delattr(self, 'lift_streaks')
+        if hasattr(self, 'prev_end_pts'):
+            delattr(self, 'prev_end_pts')
+        
         return self.get_observation()
 
-    def step(self, action: np.ndarray):
-        """Apply one action (normalized target lengths) then advance one physics step.
-
-        Action shape must match n_actuators. Each element in [0,1].
-        Length mapping: target_length = min + a*(max-min)
-        """
-        action = np.asarray(action, dtype=np.float32)
-        if action.shape != (self.n_actuators,):
-            raise ValueError(f"Action shape {action.shape} != ({self.n_actuators},)")
-
-        # Disable underlying PID/DCMotor debug after configured number of steps (without modifying their source files)
-        if (self.debug_enabled and not self._child_debug_disabled and self.step_count >= self.debug_max_steps):
-            for pid in self.pids:
-                pid.debug_enabled = False
-            for mot in self.cable_motors:
-                mot.debug_enabled = False
-            self._child_debug_disabled = True
-            print(f"[debug] Disabled PID/DCMotor internal debug after {self.step_count} steps (limit {self.debug_max_steps}).")
-
-        # Clip & track violations
-        clipped = np.clip(action, 0.0, 1.0)
-        if not np.allclose(clipped, action):
-            self.action_clip_violations += 1
-            if not self.first_clip_exception_raised:
-                self.first_clip_exception_raised = True
-                raise ValueError("Action out of [0,1] range encountered. Subsequent violations will be counted only.")
-            action = clipped
-        else:
-            action = clipped
-
-        # Compute controls via PID for each actuator (PID output treated as motor command)
-        controls = np.zeros(self.n_actuators, dtype=np.float32)
-        target_lengths_m = np.zeros(self.n_actuators, dtype=np.float32)
-        current_lengths_m = np.zeros(self.n_actuators, dtype=np.float32)
-        errors_m = np.zeros(self.n_actuators, dtype=np.float32)
-        pid_us = np.zeros(self.n_actuators, dtype=np.float32)
-
-        for idx, tendon_id in enumerate(self.actuated_ids):
-            target_norm = action[idx]
-            curr_len = self._tendon_current_length(tendon_id)
-            rest_len = self.mjc_model.tendon_lengthspring[tendon_id, 0]
-            # Map target_norm to physical target length for diagnostics
-            tgt_len = self.min_cable_length + target_norm * (self.max_cable_length - self.min_cable_length)
-            u, _ = self.pids[idx].update_control_by_target_norm_length(
-                curr_len, target_norm, rest_len, self.min_cable_length, self.max_cable_length
-            )
-            # Reintroduce inversion so that negative PID (contract) leads to rest-length decrease
-            controls[idx] = float(-u) #was negative
-            target_lengths_m[idx] = tgt_len
-            current_lengths_m[idx] = curr_len
-            errors_m[idx] = tgt_len - curr_len
-            pid_us[idx] = float(u)
-            # if idx == 0:
-                # print("u = ", u)
-
-        # # Check if your cable length ranges allow meaningful motion
-        # print(f"Cable control range: {self.min_cable_length:.4f}m to {self.max_cable_length:.4f}m")
-        # range_span = self.max_cable_length - self.min_cable_length
-        # print(f"Control span: {range_span*100:.1f}cm")
-
-        # # For tensegrity robots, typical ranges are 10-30cm
-        # if range_span < 0.1:  # Less than 10cm
-        #     print("⚠️  Control range may be too small for visible motion")
-        mujoco.mj_step1(self.mjc_model, self.mjc_data)  # prepare for control updates
-        # Update rest lengths using motor dynamics
-        #OLDDDDD
-        # for idx, tendon_id in enumerate(self.actuated_ids):
-        #     ctrl = controls[idx]
-        #     rest_length = self.mjc_model.tendon_lengthspring[tendon_id, 0]
-        #     dl = self.cable_motors[idx].compute_cable_length_delta(ctrl, self.dt)
-        #     # dl - dl*10  # Scale factor to increase responsiveness
-        #     new_rest = np.clip(rest_length + dl, self.min_cable_length, self.max_cable_length)
-        #     # Fix 4: consistent indexing, always assign [tendon_id, 0]
-        #     self.mjc_model.tendon_lengthspring[tendon_id, 0] = new_rest
-        #     if self.debug_enabled and self.step_count < self.debug_max_steps:
-        #         print(f"[diag] step={self.step_count} act={idx} tendon={tendon_id} target_norm={action[idx]:.3f} tgt_len={target_lengths_m[idx]:.4f} curr_len_pre={current_lengths_m[idx]:.4f} rest_pre={rest_length:.4f} u={pid_us[idx]:.3f} ctrl={ctrl:.3f} dl={dl:.6f} rest_new={new_rest:.4f}")
-
-        for idx, tendon_id in enumerate(self.actuated_ids):
-            # Compute current length
-            curr_len = self._tendon_current_length(tendon_id)
-
-            # Target normalized length from action
-            target_norm = action[idx]
-            target_len = self.min_cable_length + target_norm * (self.max_cable_length - self.min_cable_length)
-
-            # Cable update strategy: proportional adjustment based on error
-            error = target_len - curr_len
-
-            # Adjust rest length proportionally to the length error
-            k_cable = 0.5  # You can tune this gain value for responsiveness
-            delta_rest = k_cable * error
-
-            # Update the tendon rest length
-            old_rest = self.mjc_model.tendon_lengthspring[tendon_id, 0]
-            new_rest = np.clip(old_rest + delta_rest, self.min_cable_length, self.max_cable_length)
-            self.mjc_model.tendon_lengthspring[tendon_id, 0] = new_rest
-            # print("does new rest == rst length", new_rest == rest_len)
-            # print('max_cable_length:', self.max_cable_length)
-            
-
-
-
-            if self.debug_enabled and self.step_count < self.debug_max_steps:
-                print(
-                    f"[cable-update] step={self.step_count} act={idx} tendon={tendon_id} "
-                    f"curr_len={curr_len:.4f} target_len={target_len:.4f} error={error:.4f} "
-                    f"old_rest={old_rest:.4f} new_rest={new_rest:.4f}"
-                )
-
-
-
-
-        # # Check if DC motors are configured properly
-        # for idx, motor in enumerate(self.cable_motors):
-        #     max_dl = motor.compute_cable_length_delta(1.0, self.dt)
-        #     steps_for_1cm = 0.01 / abs(max_dl) if abs(max_dl) > 0 else float('inf')
-            
-        #     print(f"Motor {idx}: Max length change = {max_dl*1000:.3f}mm/step")
-        #     print(f"  Steps needed for 1cm motion: {steps_for_1cm:.0f}")
-            
-        #     if steps_for_1cm > 1000:  # More than 1000 steps for 1cm
-        #         print(f"  ⚠️  Motor {idx} is very slow - may need many steps to see motion")
-
-        # # Check PID responsiveness
-        # for idx, pid in enumerate(self.pids):
-        #     print(f"PID {idx}: Kp={pid.Kp}, Ki={pid.Ki}, Kd={pid.Kd}")
-            
-        #     # Test PID response to large error
-        #     test_error = 0.5  # 50% of range
-        #     test_response = pid.Kp * test_error
-        #     print(f"  Test response to 50% error: {test_response:.4f}")
-            
-        #     if abs(test_response) < 0.1:
-        #         print(f"  ⚠️  PID {idx} may be under-responsive (low Kp)")
-        mujoco.mj_step2(self.mjc_model, self.mjc_data)  # run dynamics
+    def sim_step(self, target_lengths=None):
+        """Single environment step applying target normalized cable lengths.
         
-
-        # mujoco.mj_forward(self.mjc_model, self.mjc_data)
-
-        # mujoco.mj_step(self.mjc_model, self.mjc_data)
-        print("qpos before:", self.mjc_data.qpos.copy())
-        self.forward()
-        mujoco.mj_forward(self.mjc_model, self.mjc_data)
+        Reward function copied from dual robot with dimension adjustments.
         
-        print("qpos after: ", self.mjc_data.qpos)
-
-        self.step_count += 1
-
-        obs = self.get_observation(action=action)
-        reward, reward_terms = self.compute_reward()
-        # Capture current actuator state post-step
-        curr_lengths = self._get_actuated_lengths()
-        curr_rest_lengths = np.array([
-            self.mjc_model.tendon_lengthspring[t_id, 0] for t_id in self.actuated_ids
-        ], dtype=np.float32)
-        true_tendon_lengths = np.array([
-            self.mjc_data.ten_length[t_id] for t_id in self.actuated_ids
-        ], dtype=np.float32)
-        done = False
-        # Instrumentation (Fix 6)
-        self.diag_target_norm.append(action.copy())
-        self.diag_curr_length.append(current_lengths_m.copy())
-        self.diag_rest_length.append(curr_rest_lengths.copy())
-        self.diag_pid_u.append(pid_us.copy())
-        self.diag_error.append(errors_m.copy())
-        self.diag_true_tendon_length.append(true_tendon_lengths.copy())
-        # For dl we only stored last loop; recompute quickly here for storage based on rest change
-        # (approx) dl = rest_new - rest_old per actuator
-        # Since we didn't cache rest_old per actuator collectively, skip exact; placeholder zeros array
-        self.diag_dl.append(np.zeros_like(curr_rest_lengths))  # optional refinement later
-        # self.sim.step()
-
-        if self.debug_enabled and self.step_count <= self.debug_max_steps:
-            for idx, tendon_id in enumerate(self.actuated_ids):
-                print(
-                    f"[diag-post] step={self.step_count} act={idx} tendon={tendon_id} curr_len_post={curr_lengths[idx]:.4f} true_len={true_tendon_lengths[idx]:.4f} rest_len={curr_rest_lengths[idx]:.4f} error={errors_m[idx]:.4f}"
+        Parameters
+        ----------
+        target_lengths : np.ndarray, shape (6,)
+            Normalized target cable lengths in [0, 1]
+        
+        Returns
+        -------
+        observation : np.ndarray
+        reward : float
+        done : bool
+        info : dict
+        """
+        controls = None
+        
+        # Convert target_lengths to controls in [-1, 1]
+        if target_lengths is not None:
+            controls = np.zeros(self.n_actuators, dtype=float)
+            
+            # Normalize and cache last action
+            try:
+                desired_norms = np.asarray(target_lengths, dtype=float)
+            except Exception:
+                desired_norms = np.array(list(target_lengths), dtype=float)
+            
+            # Enforce [0,1] without raising to keep sim running
+            desired_norms = np.clip(desired_norms, 0.0, 1.0)
+            self.prev_action = desired_norms.astype(np.float32)
+            
+            # 1. Compute PID controls for each actuator
+            for i in range(self.n_actuators):
+                desired_norm = float(desired_norms[i])
+                rest_length = self.mjc_model.tendon_lengthspring[self.actuated_ids[i], 0]
+                
+                # Get current cable length from site positions
+                s0 = self.mjc_data.sensor(f"pos_{self.cable_sites[i][0]}").data
+                s1 = self.mjc_data.sensor(f"pos_{self.cable_sites[i][1]}").data
+                curr_length = np.linalg.norm(s1 - s0)
+                
+                # PID control
+                ctrl, _ = self.pids[i].update_control_by_target_norm_length(
+                    curr_length, desired_norm, rest_length,
+                    self.min_cable_length, self.max_cable_length
                 )
-
-        info = {
-            "reward_terms": reward_terms.terms,
-            "controls": controls.copy(),
-            "actuated_lengths": curr_lengths.copy(),
-            "rest_lengths": curr_rest_lengths.copy(),
-            "true_tendon_lengths": true_tendon_lengths.copy(),
-            "diag_available": True,
-        }
-        self.prev_action = action.copy()
-        self.prev_lengths = self._get_actuated_lengths()
-
-        # print("Cable forces:", self.mjc_data.tendon_force)
-
-
-        # self.sim.step()
-
-        return obs, reward, done, info
-
-    
-    def cable_update_strategy(self, current_length: float, target_length: float, actuator_index: int) -> float:
-        """
-        Compute the delta rest length update for the cable given current and target lengths.
-
-        Replace the body with your actual update logic.
-        """
-        # Example simple proportional update:
-        k = 0.1  # tuning parameter, replace with your own
-        delta = k * (target_length - current_length)
-        return delta
-
-    # ------------------------------------------------------------------
-    # Observation & Reward
-    # ------------------------------------------------------------------
-    def _tendon_current_length(self, tendon_id: int) -> float:
-        # Approximate length from the site endpoints we cached
+                controls[i] = -1.0 * ctrl
+            
+            # 2. Apply motor updates and step physics for 100 timesteps (1 second)
+            # This matches the handmade gait demonstrations and realistic cable actuation speed
+            steps_per_action = int(1.0 / self.dt)  # 100 steps for dt=0.01
+            
+            for step_i in range(steps_per_action):
+                # Update tendon rest lengths
+                for tendon_id in self.actuated_ids:
+                    action_idx = self.actuated_ids.index(tendon_id)
+                    ctrl = controls[action_idx]
+                    cable_rest_length = self.mjc_model.tendon_lengthspring[tendon_id, 0]
+                    dl = self.cable_motors[action_idx].compute_cable_length_delta(ctrl, self.dt)
+                    new_rest_length = np.clip(cable_rest_length + dl, self.min_cable_length, self.max_cable_length)
+                    self.mjc_model.tendon_lengthspring[tendon_id] = new_rest_length
+                    
+                    if step_i == 0:  # Only debug print first iteration to avoid spam
+                        debug_print(f"Cable {tendon_id} dl={dl:.4f} ctrl={ctrl:.3f} newL={new_rest_length:.3f}",
+                                   "single_tensegrity_mjc_simulation.py", self.debug_enabled)
+                
+                # Step physics once
+                mujoco.mj_step(self.mjc_model, self.mjc_data)
+                self.forward()
+                
+                # Render if visualization is enabled (smooth rendering during action execution)
+                if self.visualize and step_i % 5 == 0:  # Render every 5th physics step to balance smoothness and performance
+                    self.render()
+                    time.sleep(self.render_pause)  # Pause to slow down visualization
+        
+        # ===== REWARD COMPUTATION (copied from dual robot) =====
+        
+        # Get end points for locomotion reward
+        end_pts = self.get_endpts()
+        robot_pos = end_pts.mean(axis=0)  # Use mean of endpoints as robot position
+        
+        # Endpoint Height Reward: anti-glide via turnover, duty cycle, and lift transitions
+        end_pts_z = end_pts[:, 2]
+        
+        # Ground/contact and lift thresholds (with hysteresis) and hover band (meters)
+        z_g_enter, z_g_exit = 0.06, 0.07
+        z_hover = 0.03
+        z_lift_enter, z_lift_exit = 0.10, 0.09
+        
+        # Contact mask with hysteresis
+        if not hasattr(self, 'ground_state'):
+            self.ground_state = np.zeros_like(end_pts_z, dtype=bool)
+        prev_ground_state = self.ground_state
+        ground_mask = np.where(prev_ground_state,
+                               ~(end_pts_z >= z_g_exit),
+                               (end_pts_z <= z_g_enter))
+        self.ground_state = ground_mask
+        num_ground = int(np.sum(ground_mask))
+        
+        # Lift mask with hysteresis
+        if not hasattr(self, 'lift_state'):
+            self.lift_state = np.zeros_like(end_pts_z, dtype=bool)
+        prev_lift_state = self.lift_state
+        lifted_mask = np.where(prev_lift_state,
+                               ~(end_pts_z <= z_lift_exit),
+                               (end_pts_z >= z_lift_enter))
+        self.lift_state = lifted_mask
+        
+        # 1) Contact count penalty outside widened [2,6] band (adjusted for single robot: [1,4])
+        d_below = max(0, 1 - num_ground)  # CHANGE: adjusted for single robot (6 endpoints vs 12)
+        d_above = max(0, num_ground - 4)  # CHANGE: adjusted for single robot
+        contact_count_penalty = -0.25 * (d_below + d_above)
+        contact_count_penalty = max(contact_count_penalty, -2.0)
+        
+        # 2) Penalize hover/skating band
+        hover_mask = (end_pts_z > 0.0) & (end_pts_z < z_hover)
+        hover_count = int(np.sum(hover_mask))
+        hover_cap = 3  # CHANGE: adjusted for single robot (was 4)
+        hover_term = -float(min(hover_count, hover_cap))
+        
+        # 3) Reward turnover
+        if not hasattr(self, 'prev_ground_mask'):
+            self.prev_ground_mask = ground_mask.copy()
+        turnover = np.sum(ground_mask ^ self.prev_ground_mask)
+        self.prev_ground_mask = ground_mask.copy()
+        
+        # 4) Per-endpoint duty cycle toward ~50%
+        if not hasattr(self, 'ground_duty_ema'):
+            self.ground_duty_ema = np.zeros_like(end_pts_z, dtype=np.float32)
+        ema_alpha = 0.05
+        self.ground_duty_ema = (1.0 - ema_alpha) * self.ground_duty_ema + ema_alpha * ground_mask.astype(np.float32)
+        duty_score = -np.sum((self.ground_duty_ema - 0.5) ** 2)
+        
+        # 4b) Per-endpoint lifted duty cycle
+        if not hasattr(self, 'lifted_duty_ema'):
+            self.lifted_duty_ema = np.zeros_like(end_pts_z, dtype=np.float32)
+        self.lifted_duty_ema = (1.0 - ema_alpha) * self.lifted_duty_ema + ema_alpha * lifted_mask.astype(np.float32)
+        lifted_duty_score = -np.sum((self.lifted_duty_ema - 0.5) ** 2)
+        
+        # 5) Lift transitions bonus
+        if not hasattr(self, 'prev_lifted_mask'):
+            self.prev_lifted_mask = lifted_mask.copy()
+        lift_ups = np.sum(np.logical_and(lifted_mask, ~self.prev_lifted_mask))
+        lift_downs = np.sum(np.logical_and(~lifted_mask, self.prev_lifted_mask))
+        self.prev_lifted_mask = lifted_mask.copy()
+        lift_transition_reward = lift_ups
+        
+        # Combine endpoint height components
+        endpoint_height_reward = (
+            1.0 * contact_count_penalty +
+            6.0 * turnover +
+            0.5 * duty_score +
+            1.0 * lifted_duty_score +
+            6.0 * lift_transition_reward
+        )
+        endpoint_height_reward = float(np.clip(endpoint_height_reward, -50.0, 50.0))
+        
+        # Lifted centroid XY movement
+        lifted_centroid_xy_reward = 0.0
         try:
-            sA, sB = self.cable_sites[tendon_id]
-            if not sA or not sB:
-                return 0.0
-            pA = self.mjc_data.site(self.mjc_model.site(sA).id).xpos
-            pB = self.mjc_data.site(self.mjc_model.site(sB).id).xpos
-            return float(np.linalg.norm(pB - pA))
+            if np.any(lifted_mask):
+                lifted_xy = end_pts[lifted_mask][:, :2]
+                centroid_xy = lifted_xy.mean(axis=0)
+                if hasattr(self, 'prev_lifted_centroid_xy') and (self.prev_lifted_centroid_xy is not None):
+                    centroid_disp = float(np.linalg.norm(centroid_xy - self.prev_lifted_centroid_xy))
+                    lifted_centroid_xy_reward = centroid_disp
+                self.prev_lifted_centroid_xy = centroid_xy.copy()
+            else:
+                self.prev_lifted_centroid_xy = None
         except Exception:
-            return 0.0
+            lifted_centroid_xy_reward = 0.0
+        
+        # Continuous movement: per-step COM XY progress
+        com_step_progress = 0.0
+        com_step_dist = 0.0
+        com_step_direction = None
+        if hasattr(self, 'prev_pos') and self.prev_pos is not None:
+            com_step_vec = robot_pos[:2] - self.prev_pos[:2]
+            com_step_dist = float(np.linalg.norm(com_step_vec))
+            com_step_progress = float(np.tanh(5.0 * com_step_dist))
+            if com_step_dist > 1e-6:
+                com_step_direction = com_step_vec / com_step_dist
+            else:
+                com_step_direction = None
+        else:
+            com_step_direction = None
 
-    def _get_actuated_lengths(self) -> np.ndarray:
-        return np.array([self._tendon_current_length(tid) for tid in self.actuated_ids], dtype=np.float32)
+        # --- Direction Consistency Streak Reward ---
+        # Track the direction of COM movement and reward streaks of consistent direction
+        direction_streak_reward = 0.0
+        direction_streak_weight = 5.0  # Tune this weight as needed
+        direction_cos_threshold = 0.92  # ~23 degrees, cos(angle)
+        direction_decay = 0.5  # How much to decay streak on inconsistency
+        if not hasattr(self, 'direction_streak'):
+            self.direction_streak = 0
+            self.prev_direction = None
+        if com_step_direction is not None:
+            if self.prev_direction is not None:
+                cos_sim = float(np.dot(com_step_direction, self.prev_direction))
+                if cos_sim > direction_cos_threshold:
+                    self.direction_streak += 1
+                else:
+                    # Partial decay, not full reset
+                    self.direction_streak = int(self.direction_streak * direction_decay)
+            else:
+                self.direction_streak = 1
+            self.prev_direction = com_step_direction.copy()
+        else:
+            # No movement, decay streak
+            self.direction_streak = int(self.direction_streak * direction_decay)
+        # Reward is proportional to streak length (with tanh squashing)
+        direction_streak_reward = direction_streak_weight * float(np.tanh(0.1 * self.direction_streak))
+        
+        # Grounded centroid XY movement
+        grounded_centroid_xy_reward = 0.0
+        try:
+            if np.any(ground_mask):
+                grounded_xy = end_pts[ground_mask][:, :2]
+                g_centroid = grounded_xy.mean(axis=0)
+                if hasattr(self, 'prev_grounded_centroid_xy') and (self.prev_grounded_centroid_xy is not None):
+                    g_disp = float(np.linalg.norm(g_centroid - self.prev_grounded_centroid_xy))
+                    grounded_centroid_xy_reward = g_disp
+                self.prev_grounded_centroid_xy = g_centroid.copy()
+            else:
+                self.prev_grounded_centroid_xy = None
+        except Exception:
+            grounded_centroid_xy_reward = 0.0
+        
+        # Stagnation penalty
+        if not hasattr(self, 'low_speed_hist'):
+            self.low_speed_hist = []
+        xy_speed_for_stall = (com_step_dist / self.dt) if (hasattr(self, 'prev_pos') and self.prev_pos is not None) else 0.0
+        self.low_speed_hist.append(xy_speed_for_stall < 0.01)
+        if len(self.low_speed_hist) > 15:
+            self.low_speed_hist.pop(0)
+        stall_ratio = float(np.mean(self.low_speed_hist)) if len(self.low_speed_hist) > 0 else 0.0
+        
+        if not hasattr(self, 'stall_streak'):
+            self.stall_streak = 0
+        self.stall_streak = self.stall_streak + 1 if (xy_speed_for_stall < 0.01) else 0
+        ramp = float(1.0 - np.exp(-0.1 * self.stall_streak))
+        stall_penalty = -4.0 * stall_ratio * (0.5 + 0.5 * ramp)
+        
+        if (com_step_progress >= 0.02) or (turnover > 0) or (lift_transition_reward > 0):
+            self.stall_streak = 0
+            ramp = 0.0
+        stall_penalty = max(stall_penalty, -0.5)
+        
+        # Resume bonus
+        if not hasattr(self, 'high_speed_hist'):
+            self.high_speed_hist = []
+        self.high_speed_hist.append(xy_speed_for_stall >= 0.02)
+        if len(self.high_speed_hist) > 5:
+            self.high_speed_hist.pop(0)
+        resume_bonus = 0.0
+        if len(self.high_speed_hist) >= 3 and all(self.high_speed_hist[-3:]):
+            resume_bonus = 2.0
+        
+        # Track lifted streaks
+        if not hasattr(self, 'lift_streaks'):
+            self.lift_streaks = np.zeros_like(end_pts_z, dtype=np.int32)
+        self.lift_streaks = np.where(lifted_mask, self.lift_streaks + 1, 0)
+        
+        # Lifted swing path-length
+        if not hasattr(self, 'prev_end_pts'):
+            self.prev_end_pts = end_pts.copy()
+        step_xy_all = np.linalg.norm(end_pts[:, :2] - self.prev_end_pts[:, :2], axis=1)
+        warmup, alpha_decay = 6, 0.05
+        dwell_decay = np.exp(-alpha_decay * np.maximum(0, self.lift_streaks - warmup)).astype(np.float32)
+        lifted_step_lengths = step_xy_all * lifted_mask.astype(np.float32) * dwell_decay
+        lifted_swing_reward = float(np.sum(np.tanh(5.0 * lifted_step_lengths)))
+        
+        dwell_thresh = 12
+        lift_dwell_penalty = -0.02 * float(np.sum(np.maximum(0, self.lift_streaks - dwell_thresh)))
+        lift_dwell_penalty = max(lift_dwell_penalty, -1.0)
+        self.prev_end_pts = end_pts.copy()
+        
+        # Compose final reward
+        lifted_centroid_xy_reward_weight = 15.0
+        grounded_centroid_xy_reward_weight = 7.0
+        
+        # Hover penalty gating
+        lifted_count = int(np.sum(lifted_mask))
+        hover_weight = 0.0 if (self.stall_streak < 5 or lifted_count >= 2) else 3.0
+        
+        # Action smoothing penalty
+        action_smooth_penalty = 0.0
+        if controls is not None:
+            if hasattr(self, 'prev_controls') and self.prev_controls is not None:
+                try:
+                    action_smooth_penalty = -0.05 * float(np.sum(np.abs(controls - self.prev_controls)))
+                except Exception:
+                    action_smooth_penalty = 0.0
+            self.prev_controls = controls.copy()
+        action_smooth_penalty = max(action_smooth_penalty, -1.0)
+        
+        reward_raw = (
+            endpoint_height_reward
+            + lifted_centroid_xy_reward_weight * lifted_centroid_xy_reward
+            + grounded_centroid_xy_reward_weight * grounded_centroid_xy_reward
+            + 30.0 * com_step_progress  # Increased from 24.0 to 30.0
+            + 10.0 * lifted_swing_reward  # Increased from 7.0 to 10.0
+            + stall_penalty
+            + resume_bonus
+            + lift_dwell_penalty
+            + hover_weight * hover_term
+            + action_smooth_penalty
+            + direction_streak_reward
+        )
+        
+        # Final reward clipping
+        reward = float(np.clip(reward_raw, -100.0, 100.0))
+        
+        # Update position tracking
+        self.prev_pos = robot_pos.copy()
+        self.step_count += 1
+        
+        # Build observation
+        observation = self.get_observation()
+        done = False
+        
+        # Detailed info for debugging
+        info = {
+            'endpoint_height_reward': endpoint_height_reward,
+            'contact_count_penalty': float(contact_count_penalty),
+            'turnover': float(turnover),
+            'duty_score': float(duty_score),
+            'lifted_duty_score': float(lifted_duty_score),
+            'hover_count': float(hover_count),
+            'hover_term': float(hover_term),
+            'lift_transition_reward': float(lift_transition_reward),
+            'lifted_centroid_xy_reward': float(lifted_centroid_xy_reward),
+            'grounded_centroid_xy_reward': float(grounded_centroid_xy_reward),
+            'com_step_progress': float(com_step_progress),
+            'lifted_swing_reward': float(lifted_swing_reward),
+            'stall_penalty': float(stall_penalty),
+            'resume_bonus': float(resume_bonus),
+            'lift_dwell_penalty': float(lift_dwell_penalty),
+            'lift_streak_mean': float(np.mean(self.lift_streaks)),
+            'hover_weight_applied': float(hover_weight),
+            'action_smooth_penalty': float(action_smooth_penalty),
+            'direction_streak_reward': float(direction_streak_reward),
+            'direction_streak': int(self.direction_streak),
+            'controls': controls.copy() if controls is not None else None,
+            'action': self.prev_action.copy(),
+        }
+        
+        return observation, reward, done, info
 
-    def _get_actuated_length_rates(self) -> np.ndarray:
-        curr = self._get_actuated_lengths()
-        rates = (curr - self.prev_lengths) / max(self.dt, 1e-8)
-        return rates.astype(np.float32)
+    def get_observation(self):
+        """Build observation vector from configured components."""
+        parts = []
+        
+        # 1. Cable lengths (normalized)
+        if self.obs_components.get('cable_lengths', 0) > 0:
+            lengths = self._get_actuated_cable_lengths()
+            norm_lengths = (lengths - self.min_cable_length) / max(self.max_cable_length - self.min_cable_length, 1e-6)
+            norm_lengths = np.clip(norm_lengths, 0.0, 1.0).astype(np.float32)
+            parts.append(norm_lengths)
+        
+        # 2. Cable length rates
+        if self.obs_components.get('cable_rates', 0) > 0:
+            curr_lengths = self._get_actuated_cable_lengths()
+            rates = (curr_lengths - self.prev_lengths) / max(self.dt, 1e-8)
+            denom = max(self.max_cable_length - self.min_cable_length, 1e-6)
+            rates_norm = np.clip(rates / denom, -1.0, 1.0).astype(np.float32)
+            parts.append(rates_norm)
+            self.prev_lengths = curr_lengths
+        
+        # 3. Previous action
+        if self.obs_components.get('prev_action', 0) > 0:
+            parts.append(self.prev_action.astype(np.float32))
+        
+        # 4. IMU gravity vectors
+        if self.obs_components.get('imu', 0) > 0:
+            imu_grav = self._get_IMU_gravity_vectors()
+            parts.append(imu_grav)
+        
+        # Concatenate all parts
+        obs = np.concatenate(parts).astype(np.float32) if parts else np.zeros(1, dtype=np.float32)
+        
+        # Verify dimension matches
+        if obs.shape[0] != self.obs_dim:
+            debug_print(f"WARNING: Observation dimension mismatch! Expected {self.obs_dim}, got {obs.shape[0]}", 
+                       "single_tensegrity_mjc_simulation.py", True)
+        
+        return obs
 
-    def _get_IMU_grav_vectors(self) -> np.ndarray:
-        # For each rod geom, approximate orientation via body quaternion
+    def _get_actuated_cable_lengths(self) -> np.ndarray:
+        """Get current lengths of actuated cables."""
+        lengths = []
+        for i in range(self.n_actuators):
+            try:
+                s0 = self.mjc_data.sensor(f"pos_{self.cable_sites[i][0]}").data
+                s1 = self.mjc_data.sensor(f"pos_{self.cable_sites[i][1]}").data
+                length = np.linalg.norm(s1 - s0)
+                lengths.append(length)
+            except Exception as e:
+                debug_print(f"Error getting cable {i} length: {e}", "single_tensegrity_mjc_simulation.py", self.debug_enabled)
+                lengths.append(0.0)
+        return np.array(lengths, dtype=np.float32)
+
+    def _get_IMU_gravity_vectors(self) -> np.ndarray:
+        """Get gravity vectors in rod body frames (3 rods × 3D = 9 values)."""
         vecs = []
         gravity_world = np.array([0, 0, -1.0], dtype=np.float32)
-        for g in self.imu_geom_names:
+        
+        for geom_name in self.imu_geom_names:
             try:
-                body_id = mujoco.mj_name2id(self.mjc_model, mujoco.mjtObj.mjOBJ_BODY, g)
+                # Get body associated with this geom
+                geom_id = mujoco.mj_name2id(self.mjc_model, mujoco.mjtObj.mjOBJ_GEOM, geom_name)
+                body_id = self.mjc_model.geom_bodyid[geom_id]
                 quat = self.mjc_data.xquat[body_id]
+                
                 # Convert quaternion to rotation matrix
                 w, x, y, z = quat
                 R = np.array([
@@ -441,131 +596,89 @@ class SingleTensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
                     [2*(x*y + z*w),     1 - 2*(x*x + z*z), 2*(y*z - x*w)],
                     [2*(x*z - y*w),     2*(y*z + x*w),     1 - 2*(x*x + y*y)]
                 ], dtype=np.float32)
-                vecs.append((R.T @ gravity_world).astype(np.float32))
-            except Exception:
+                
+                # Transform gravity to body frame
+                grav_body = R.T @ gravity_world
+                vecs.append(grav_body.astype(np.float32))
+            except Exception as e:
+                debug_print(f"Error getting IMU for {geom_name}: {e}", "single_tensegrity_mjc_simulation.py", self.debug_enabled)
                 vecs.append(np.zeros(3, dtype=np.float32))
+        
         return np.concatenate(vecs).astype(np.float32)
 
-    def get_observation(self, action: Optional[np.ndarray] = None) -> np.ndarray:
-        parts: List[np.ndarray] = []
-        if self.obs_config.include_cable_lengths:
-            lengths = self._get_actuated_lengths()
-            norm = (lengths - self.min_cable_length) / max(self.max_cable_length - self.min_cable_length, 1e-6)
-            norm = np.clip(norm, 0.0, 1.0)
-            parts.append(norm.astype(np.float32))
-        if self.obs_config.include_cable_length_rates:
-            rates = self._get_actuated_length_rates()
-            # Scale rates by length range
-            denom = max(self.max_cable_length - self.min_cable_length, 1e-6)
-            rates_norm = np.clip(rates / denom, -1.0, 1.0).astype(np.float32)
-            parts.append(rates_norm)
-        if self.obs_config.include_prev_action:
-            parts.append(self.prev_action.astype(np.float32))
-        if self.obs_config.include_imu:
-            parts.append(self._get_IMU_grav_vectors())
-        obs = np.concatenate(parts).astype(np.float32) if parts else np.zeros(1, dtype=np.float32)
-        return obs
+    def get_endpts(self):
+        """Get endpoint xyz coordinates."""
+        end_pts = []
+        for end_pt_site in self.end_pts:
+            try:
+                end_pt = self.mjc_data.sensor(f"pos_{end_pt_site}").data
+                end_pts.append(end_pt)
+            except Exception as e:
+                debug_print(f"Error getting endpoint {end_pt_site}: {e}", "single_tensegrity_mjc_simulation.py", self.debug_enabled)
+                end_pts.append(np.zeros(3, dtype=np.float32))
+        
+        return np.vstack(end_pts)
 
-    def compute_reward(self) -> Tuple[float, RewardTerms]:
-        terms = RewardTerms()
-        # Example base term: encourage change in average cable length (activity)
-        lengths = self._get_actuated_lengths()
-        activity = float(np.mean(np.abs(lengths - self.prev_lengths)))
-        terms.add("activity", activity)
-        # Placeholder for future domain-specific terms
-        return terms.total(), terms
+    def get_robot_position(self):
+        """Returns the current position of the robot (mean of endpoints)."""
+        self.forward()
+        end_pts = self.get_endpts()
+        return end_pts.mean(axis=0)
 
-    # ------------------------------------------------------------------
-    # Plotting Utilities
-    # ------------------------------------------------------------------
-    @staticmethod
-    def plot_actions(actions: np.ndarray, save_path: Optional[Path] = None):
-        import matplotlib.pyplot as plt
-        actions = np.asarray(actions)
-        fig, axes = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
-        axes[0].plot(actions)
-        axes[0].set_title("Normalized Actions (Target Lengths)")
-        axes[0].set_ylabel("Norm Length")
-        # Denormalized example (requires assumed min/max = 0.6 / 1.6)
-        denorm = 0.6 + actions * (1.6 - 0.6)
-        axes[1].plot(denorm)
-        axes[1].set_title("Denormalized Target Lengths")
-        axes[1].set_ylabel("Length (m*10)")
-        axes[1].set_xlabel("Step")
-        plt.tight_layout()
-        if save_path:
-            fig.savefig(save_path, dpi=200)
-        return fig
-
-    @staticmethod
-    def plot_rewards(reward_terms_list: List[Dict[str, float]], save_path: Optional[Path] = None):
-        import matplotlib.pyplot as plt
-        if not reward_terms_list:
+    def render(self, mode='human', **kwargs):
+        """Render the simulation in real-time viewer.
+        
+        Parameters
+        ----------
+        mode : str, default='human'
+            Rendering mode ('human' for window, 'rgb_array' for frame)
+        **kwargs : dict
+            Additional rendering arguments
+        
+        Returns
+        -------
+        None or np.ndarray
+            None for human mode, frame array for rgb_array mode
+        """
+        if not self.visualize:
             return None
-        keys = sorted(reward_terms_list[0].keys())
-        fig, axes = plt.subplots(len(keys) + 1, 1, figsize=(10, 2 * (len(keys) + 1)), sharex=True)
-        totals = []
-        for k_i, k in enumerate(keys):
-            series = [d.get(k, 0.0) for d in reward_terms_list]
-            axes[k_i].plot(series)
-            axes[k_i].set_ylabel(k)
-            totals.append(series)
-        # overall
-        overall = [sum(d.values()) for d in reward_terms_list]
-        axes[-1].plot(overall, color='black')
-        axes[-1].set_ylabel('total')
-        axes[-1].set_xlabel('Step')
-        plt.tight_layout()
-        if save_path:
-            fig.savefig(save_path, dpi=200)
-        return fig
 
-    @staticmethod
-    def plot_observations(observations: np.ndarray, save_path: Optional[Path] = None):
-        import matplotlib.pyplot as plt
-        observations = np.asarray(observations)
-        fig, ax = plt.subplots(figsize=(10, 4))
-        im = ax.imshow(observations.T, aspect='auto', interpolation='nearest')
-        ax.set_title('Observations Over Time')
-        ax.set_ylabel('Feature Index')
-        ax.set_xlabel('Step')
-        fig.colorbar(im, ax=ax)
-        plt.tight_layout()
-        if save_path:
-            fig.savefig(save_path, dpi=200)
-        return fig
+        # Lazy-load viewer
+        if self._viewer is None:
+            try:
+                from mujoco import viewer
+                self._viewer = viewer.launch_passive(self.mjc_model, self.mjc_data)
+            except Exception as e:
+                print(f"[ERROR] Failed to launch viewer: {e}")
+                return None
 
+        try:
+            # Update camera to track robot
+            end_pts = self.get_endpts()
+            robot_pos = end_pts.mean(axis=0)
+            self._viewer.cam.lookat[:] = robot_pos
+            self._viewer.cam.distance = 12.0  # Closer for single robot
+            self._viewer.cam.elevation = -25
+            self._viewer.cam.azimuth = 90
 
-def load_action_sequence(json_path: Path) -> np.ndarray:
-    with open(json_path, 'r') as f:
-        data = json.load(f)
-    if isinstance(data, dict) and 'actions' in data:
-        seq = np.asarray(data['actions'], dtype=np.float32)
-    else:
-        seq = np.asarray(data, dtype=np.float32)
-    if seq.ndim == 1:
-        seq = seq.reshape(1, -1)
-    return seq
+            # Update scene
+            self._viewer.sync()
+            self._viewer.render()
+        except Exception as e:
+            pass
+            # Silently fail to avoid spam
+
+    def close(self):
+        """Close renderer and cleanup resources."""
+        try:
+            if hasattr(self, '_viewer') and self._viewer is not None:
+                self._viewer.close()
+            if hasattr(self, 'renderer') and self.renderer is not None:
+                self.renderer.close()
+            import cv2
+            cv2.destroyAllWindows()
+        except:
+            pass
 
 
-EXAMPLE_ACTIONS_JSON = {
-    "actions": [
-        [0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
-        [0.2, 0.8, 0.2, 0.8, 0.2, 0.8],
-        [1.0, 0.0, 1.0, 0.0, 1.0, 0.0]
-    ]
-}
-
-
-def write_example_json(path: Path):
-    with open(path, 'w') as f:
-        json.dump(EXAMPLE_ACTIONS_JSON, f, indent=2)
-
-
-__all__ = [
-    "SingleTensegrityMuJoCoSimulator",
-    "ObservationConfig",
-    "RewardTerms",
-    "load_action_sequence",
-    "write_example_json",
-]
+__all__ = ["SingleTensegrityMuJoCoSimulator"]

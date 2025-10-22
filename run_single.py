@@ -1,432 +1,289 @@
-"""Run a single tensegrity simulation with a JSON action sequence.
+"""Simple demonstration script for single tensegrity robot.
 
-Usage examples:
-
-  # Write an example JSON then run it with visualization
-  python run_single.py --write-example actions_example.json
-  python run_single.py --sequence actions_example.json
-
-  # Headless run saving video & plots
-  python run_single.py --sequence actions_example.json --no-vis --video-save --plots
-
-JSON Format:
-{
-  "actions": [
-     [0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
-     [0.2, 0.8, 0.2, 0.8, 0.2, 0.8]
-  ]
-}
-
-Each inner list is a normalized target length vector (6 values) applied for
-multiple internal physics integration steps. By design here, a single action
-is held for H = round(1 / dt) physics steps (≈ 1.0 simulated second), where
-dt is the MuJoCo model timestep. This makes each high-level action represent
-approximately one second of simulated time regardless of dt, and total
-runtime ≈ num_actions * 1.0 seconds.
-
-CLI Flags:
-  --sequence <file>     Path to JSON containing action sequence.
-  --write-example <f>   Write an example JSON file and exit.
-  --no-vis              Disable viewer.
-  --video-save          Save an MP4 of the run (requires --sequence).
-  --kp/--ki/--kd        PID gains.
-  --total-steps N       Truncate or pad sequence to N steps (repeat last action).
-  --plots               Generate plots for actions, observations, rewards.
-
-Action Range Enforcement:
-  If an action value falls outside [0,1], the first occurrence raises ValueError.
-  Subsequent violations are clipped and counted. A summary prints at the end.
+Loads the single tensegrity simulator and runs basic test patterns.
+Can load gait patterns from JSON files or use built-in test sequences.
 """
 
-from __future__ import annotations
-
-import argparse
-import time
-from pathlib import Path
-import sys
-import json
-
 import numpy as np
-
-from mujoco_physics_engine.single_tensegrity_mjc_simulation import (
-    SingleTensegrityMuJoCoSimulator,
-    load_action_sequence,
-    write_example_json,
-)
+from pathlib import Path
+import json
+from mujoco_physics_engine.single_tensegrity_mjc_simulation import SingleTensegrityMuJoCoSimulator
 
 
-def parse_args():
-    p = argparse.ArgumentParser(description="Run single tensegrity simulation")
-    p.add_argument("--sequence", type=Path, help="Path to JSON action sequence", default=None)
-    p.add_argument("--write-example", type=Path, help="Write example actions JSON and exit", default=None)
-    p.add_argument("--no-vis", action="store_true", help="Run headless (no viewer)")
-    p.add_argument("--video-save", action="store_true", help="Save MP4 video (requires visualization enabled internally)")
-    p.add_argument("--kp", type=float, default=10.0, help="PID Kp")
-    p.add_argument("--ki", type=float, default=0.2, help="PID Ki")
-    p.add_argument("--kd", type=float, default=2.0, help="PID Kd")
-    p.add_argument("--total-steps", type=int, default=None, help="Optional total steps override")
-    p.add_argument("--plots", action="store_true", help="Generate plots for actions/observations/rewards")
-    p.add_argument(
-        "--step-delay",
-        type=float,
-        default=None,
-        help="Seconds to sleep after each step when visualizing (default: 0.1, set 0 to disable)."
+def load_gait_from_json(json_path: str) -> np.ndarray:
+    """Load gait sequence from JSON file."""
+    with open(json_path, 'r') as f:
+        gait_data = json.load(f)
+    
+    if 'actions' in gait_data:
+        actions = np.array(gait_data['actions'], dtype=np.float32)
+    else:
+        actions = np.array(gait_data, dtype=np.float32)
+    
+    print(f"✅ Loaded gait from {Path(json_path).name}")
+    print(f"   Sequence length: {len(actions)} steps")
+    if 'description' in gait_data:
+        print(f"   Description: {gait_data['description']}")
+    
+    return actions
+
+
+def run_simple_test():
+    """Run simple test pattern without gait file."""
+    print("🤖 Single Tensegrity Demonstration")
+    print("=" * 60)
+    
+    # Initialize simulator
+    print("\n1️⃣ Initializing simulator...")
+    xml_path = Path("mujoco_physics_engine/xml_models/3bar_new_platform_all_cables.xml")
+    sim = SingleTensegrityMuJoCoSimulator(
+        xml_path=xml_path,
+        visualize=True,
+        render_size=(800, 600),
+        render_fps=30,
+        debug_enabled=False
     )
-    p.add_argument(
-        "--cam-dist-scale",
-        type=float,
-        default=9.0,
-        help="Scale factor applied once to the initial free camera distance in the interactive viewer (default 9.0)."
+    
+    print(f"✅ Simulator initialized")
+    print(f"   Actuators: {sim.n_actuators}")
+    print(f"   Observation dim: {sim.obs_dim}")
+    print(f"   Cable sites: {len(sim.cable_sites)}")
+    
+    # Define a simple test pattern
+    print("\n2️⃣ Running simple alternating test pattern...")
+    test_pattern = np.array([
+        [0.5, 0.5, 0.5, 0.5, 0.5, 0.5],  # Neutral
+        [0.2, 0.8, 0.2, 0.8, 0.2, 0.8],  # Alternating 1
+        [0.8, 0.2, 0.8, 0.2, 0.8, 0.2],  # Alternating 2
+        [0.2, 0.8, 0.2, 0.8, 0.2, 0.8],  # Alternating 1
+        [0.8, 0.2, 0.8, 0.2, 0.8, 0.2],  # Alternating 2
+        [0.5, 0.5, 0.5, 0.5, 0.5, 0.5],  # Neutral
+        [1.0, 0.0, 1.0, 0.0, 1.0, 0.0],  # Extreme 1
+        [0.0, 1.0, 0.0, 1.0, 0.0, 1.0],  # Extreme 2
+        [0.5, 0.5, 0.5, 0.5, 0.5, 0.5],  # Neutral
+    ], dtype=np.float32)
+    
+    # Run pattern multiple times
+    num_cycles = 1
+    total_reward = 0.0
+    
+    # Note: sim_step now internally executes 100 physics steps per action (1 second)
+    dt = sim.dt
+    print(f"   Physics timestep: {dt}s")
+    print(f"   Each action held for 1.0 second (100 physics steps internally)")
+    
+    # --- Logging for plotting ---
+    # action_log: stores the input gait sequence (desired control action), values in [0,1]
+    # pid_log: stores the PID output (as used for cable control), values in [-1,1]
+    # cable_length_log: actual cable lengths
+    # reward_log: reward per step
+    #
+    # The desired control action is simply the input action from the gait sequence or test pattern,
+    # which is passed directly to sim.sim_step(action). It is not transformed or normalized here.
+    action_log = []
+    pid_log = []
+    cable_length_log = []
+    reward_log = []
+
+    for cycle in range(num_cycles):
+        print(f"\n   Cycle {cycle + 1}/{num_cycles}")
+        for action_idx, action in enumerate(test_pattern):
+            print(f"     Executing action {action_idx + 1}/{len(test_pattern)}...")
+            obs, reward, done, info = sim.sim_step(action)
+            total_reward += reward
+
+            # Log data for plotting
+            action_log.append(np.array(action))  # input action, [0,1]
+            pid_log.append(np.array(info['controls']) if info['controls'] is not None else np.zeros(sim.n_actuators))
+            cable_length_log.append(sim._get_actuated_cable_lengths())
+            reward_log.append(reward)
+
+    print(f"\n✅ Test complete!")
+    print(f"   Total reward: {total_reward:.2f}")
+    print(f"   Average reward per action: {total_reward / (num_cycles * len(test_pattern)):.3f}")
+
+    # --- Plotting ---
+    import matplotlib.pyplot as plt
+    action_log = np.array(action_log)
+    pid_log = np.array(pid_log)
+    cable_length_log = np.array(cable_length_log)
+    reward_log = np.array(reward_log)
+    desired_cable_length_log = np.array(desired_cable_length_log)
+    steps = np.arange(len(action_log))
+
+    fig, axs = plt.subplots(4, 1, figsize=(14, 12), sharex=True)
+    colors = plt.cm.tab10.colors
+    # 1. Input Action
+    for i in range(sim.n_actuators):
+        axs[0].plot(steps, action_log[:, i], label=f'Input Action {i+1}', linestyle='-', color=colors[i % len(colors)], linewidth=1.5)
+    axs[0].set_ylabel('Action [0,1]')
+    axs[0].set_title('Input Action (Desired Control)')
+    axs[0].legend(loc='upper right', ncol=2, fontsize=8)
+    axs[0].grid(True)
+    # 2. PID Output
+    for i in range(sim.n_actuators):
+        axs[1].plot(steps, pid_log[:, i], label=f'PID Output {i+1}', linestyle='-', color=colors[i % len(colors)], linewidth=1.5)
+    axs[1].set_ylabel('PID Output [-1,1]')
+    axs[1].set_title('PID Control Signal')
+    axs[1].legend(loc='upper right', ncol=2, fontsize=8)
+    axs[1].grid(True)
+    # 3. Cable Lengths
+    for i in range(sim.n_actuators):
+        axs[2].plot(steps, cable_length_log[:, i], label=f'Actual Cable {i+1}', linestyle='-', color=colors[i % len(colors)], linewidth=1.5)
+        axs[2].plot(steps, desired_cable_length_log[:, i], label=f'Desired Cable {i+1}', linestyle='--', color=colors[i % len(colors)], linewidth=1.2)
+    axs[2].set_ylabel('Cable Length (m)')
+    axs[2].set_title('Actual (solid) and Desired (dashed) Cable Lengths')
+    axs[2].legend(loc='upper right', ncol=2, fontsize=8)
+    axs[2].grid(True)
+    # 4. Reward
+    axs[3].plot(steps, reward_log, label='Reward', color='k')
+    axs[3].set_ylabel('Reward')
+    axs[3].set_xlabel('Step')
+    axs[3].set_title('Reward per Step')
+    axs[3].legend()
+    axs[3].grid(True)
+    plt.tight_layout()
+    plt.show()
+
+
+def run_with_gait_file(gait_json: str, num_cycles: int = 3):
+    """Run simulation with gait pattern from JSON file."""
+    print("🤖 Single Tensegrity Demonstration (with Gait File)")
+    print("=" * 60)
+    
+    # Load gait
+    # gait_json = Path("gaits") / gait_json
+    print(f"\n1️⃣ Loading gait from {gait_json}...")
+    gait_sequence = load_gait_from_json(gait_json)
+    
+    # Initialize simulator
+    print("\n2️⃣ Initializing simulator...")
+    xml_path = Path("mujoco_physics_engine/xml_models/3bar_new_platform_all_cables.xml")
+    sim = SingleTensegrityMuJoCoSimulator(
+        xml_path=xml_path,
+        visualize=True,
+        render_size=(800, 600),
+        render_fps=30,
+        debug_enabled=False
     )
-    p.add_argument(
-        "--debug",
-        action="store_true",
-        help="Enable verbose diagnostic printing (per-step actuator details)."
-    )
-    p.add_argument(
-        "--debug-steps",
-        type=int,
-        default=20,
-        help="Maximum number of initial physics steps to print diagnostics for when --debug is enabled (default 20)."
-    )
-    return p.parse_args()
+    
+    print(f"✅ Simulator initialized")
+    
+    # Run gait
+    print(f"\n3️⃣ Running gait for {num_cycles} cycles...")
+    total_reward = 0.0
+    
+    # Note: sim_step now internally executes 100 physics steps per action (1 second)
+    dt = sim.dt
+    print(f"   Physics timestep: {dt}s")
+    print(f"   Each action held for 1.0 second (100 physics steps internally)")
+    
+    # --- Logging for plotting ---
+    # action_log: stores the input gait sequence (desired control action), values in [0,1]
+    # pid_log: stores the PID output (as used for cable control), values in [-1,1]
+    # cable_length_log: actual cable lengths
+    # reward_log: reward per step
+    #
+    # The desired control action is simply the input action from the gait sequence or test pattern,
+    # which is passed directly to sim.sim_step(action). It is not transformed or normalized here.
+    action_log = []
+    pid_log = []
+    cable_length_log = []
+    desired_cable_length_log = []
+    reward_log = []
+
+    for cycle in range(num_cycles):
+        print(f"\n   Cycle {cycle + 1}/{num_cycles}")
+        for action_idx, action in enumerate(gait_sequence):
+            obs, reward, done, info = sim.sim_step(action)
+            total_reward += reward
+
+            # Log data for plotting
+            action_log.append(np.array(action))  # input action, [0,1]
+            pid_log.append(np.array(info['controls']) if info['controls'] is not None else np.zeros(sim.n_actuators))
+            cable_length_log.append(sim._get_actuated_cable_lengths())
+            desired_cable_length_log.append(sim.min_cable_length + np.array(action) * (sim.max_cable_length - sim.min_cable_length))
+            reward_log.append(reward)
+
+            if action_idx % 5 == 0:
+                print(f"     Action {action_idx}/{len(gait_sequence)}: cumulative reward={total_reward:.3f}")
+        print(f"   Cycle reward: {total_reward:.2f}")
+
+    print(f"\n✅ Demonstration complete!")
+    print(f"   Total reward: {total_reward:.2f}")
+    print(f"   Average reward per action: {total_reward / (num_cycles * len(gait_sequence)):.3f}")
+
+    # Print final robot position
+    robot_pos = sim.get_robot_position()
+    print(f"\n📍 Final robot position: [{robot_pos[0]:.3f}, {robot_pos[1]:.3f}, {robot_pos[2]:.3f}]")
+
+    # --- Plotting ---
+    import matplotlib.pyplot as plt
+    action_log = np.array(action_log)
+    pid_log = np.array(pid_log)
+    cable_length_log = np.array(cable_length_log)
+    reward_log = np.array(reward_log)
+    desired_cable_length_log = np.array(desired_cable_length_log)
+    steps = np.arange(len(action_log))
+
+    fig, axs = plt.subplots(4, 1, figsize=(14, 12), sharex=True)
+    colors = plt.cm.tab10.colors
+    # 1. Input Action
+    for i in range(sim.n_actuators):
+        axs[0].plot(steps, action_log[:, i], label=f'Input Action {i+1}', linestyle='-', color=colors[i % len(colors)], linewidth=1.5)
+    axs[0].set_ylabel('Action [0,1]')
+    axs[0].set_title('Input Action (Desired Control)')
+    axs[0].legend(loc='upper right', ncol=2, fontsize=8)
+    axs[0].grid(True)
+    # 2. PID Output
+    for i in range(sim.n_actuators):
+        axs[1].plot(steps, pid_log[:, i], label=f'PID Output {i+1}', linestyle='-', color=colors[i % len(colors)], linewidth=1.5)
+    axs[1].set_ylabel('PID Output [-1,1]')
+    axs[1].set_title('PID Control Signal')
+    axs[1].legend(loc='upper right', ncol=2, fontsize=8)
+    axs[1].grid(True)
+    # 3. Cable Lengths
+    for i in range(sim.n_actuators):
+        axs[2].plot(steps, cable_length_log[:, i], label=f'Actual Cable {i+1}', linestyle='-', color=colors[i % len(colors)], linewidth=1.5)
+        axs[2].plot(steps, desired_cable_length_log[:, i], label=f'Desired Cable {i+1}', linestyle='--', color=colors[i % len(colors)], linewidth=1.2)
+    axs[2].set_ylabel('Cable Length (m)')
+    axs[2].set_title('Actual (solid) and Desired (dashed) Cable Lengths')
+    axs[2].legend(loc='upper right', ncol=2, fontsize=8)
+    axs[2].grid(True)
+    # 4. Reward
+    axs[3].plot(steps, reward_log, label='Reward', color='k')
+    axs[3].set_ylabel('Reward')
+    axs[3].set_xlabel('Step')
+    axs[3].set_title('Reward per Step')
+    axs[3].legend()
+    axs[3].grid(True)
+    plt.tight_layout()
+    plt.show()
 
 
 def main():
-    args = parse_args()
-
-    if args.write_example is not None:
-        write_example_json(args.write_example)
-        print(f"Wrote example action JSON to {args.write_example}")
-        return
-
-    # Determine which action JSON to use
-    if args.sequence is None:
-        default_path = Path("actions_example.json")
-        if not default_path.exists():
-            write_example_json(default_path)
-            print(f"Generated default action JSON at {default_path}")
-        active_actions_path = default_path
-        print(f"Using default actions file: {active_actions_path.resolve()}")
+    """Main entry point."""
+    import sys
+    
+    if len(sys.argv) > 1:
+        # Use gait file if provided
+        gait_file = sys.argv[1]
+        gait_file = Path("gaits") / gait_file
+        num_cycles = int(sys.argv[2]) if len(sys.argv) > 2 else 3
+        
+        if not Path(gait_file).exists():
+            print(f"❌ Gait file not found: {gait_file}")
+            print("\nAvailable gait files:")
+            for gait in Path(".").glob("*.json"):
+                print(f"  - {gait.name}")
+            return
+        
+        run_with_gait_file(gait_file, num_cycles)
     else:
-        if not args.sequence.exists():
-            print(f"Error: Provided --sequence path does not exist: {args.sequence}", file=sys.stderr)
-            sys.exit(1)
-        active_actions_path = args.sequence
-        print(f"Using provided actions file: {active_actions_path.resolve()}")
-
-    actions_seq = load_action_sequence(active_actions_path)  # shape (T, 6)
-    if actions_seq.shape[1] != 6:
-        print(f"Error: Expected 6 actions per step, got shape {actions_seq.shape}", file=sys.stderr)
-        sys.exit(1)
-
-    # Apply total-steps override (truncate or pad by repeating last action)
-    if args.total_steps is not None:
-        if args.total_steps <= 0:
-            print("Error: --total-steps must be > 0", file=sys.stderr)
-            sys.exit(1)
-        if args.total_steps < actions_seq.shape[0]:
-            actions_seq = actions_seq[: args.total_steps]
-        elif args.total_steps > actions_seq.shape[0]:
-            last = actions_seq[-1]
-            pad = np.repeat(last[None, :], args.total_steps - actions_seq.shape[0], axis=0)
-            actions_seq = np.vstack([actions_seq, pad])
-
-    output_dir = Path("./sim_output/single")
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # Always create an internal renderer if we want video, even if --no-vis
-    internal_visualize = (not args.no_vis) or args.video_save
-
-    sim = SingleTensegrityMuJoCoSimulator(
-        visualize=internal_visualize,
-        pid_kp=args.kp,
-        pid_ki=args.ki,
-        pid_kd=args.kd,
-        debug_enabled=args.debug,
-        debug_max_steps=args.debug_steps,
-    )
-
-    # Determine how many physics steps to hold each high-level action
-    hold_steps = max(1, int(round(1.0 / sim.dt)))  # ~1 second per high-level action
-    expanded_actions = np.repeat(actions_seq, hold_steps, axis=0)
-
-    print("==== Single Tensegrity Simulation ====")
-    print(f"High-level actions: {actions_seq.shape[0]}")
-    print(f"Physics dt: {sim.dt:.6f} s  |  Hold steps/action: {hold_steps}  |  Total physics steps: {expanded_actions.shape[0]}")
-    print(f"Approx total simulated time: {expanded_actions.shape[0] * sim.dt:.3f} s")
-    print("Actuated tendon IDs:", sim.actuated_ids)
-
-    frames = []
-    observations = []
-    reward_terms_log = []
-    rewards = []
-    controls_log = []          # PID control outputs per physics step
-    lengths_log = []           # Actual cable lengths
-    rest_lengths_log = []      # Rest (spring) lengths after motor update
-
-    # Try launching interactive viewer (MuJoCo native window) if visualization enabled
-    viewer = None
-    if internal_visualize and not args.no_vis:
-        try:
-            import mujoco.viewer  # type: ignore
-            viewer = mujoco.viewer.launch_passive(sim.mjc_model, sim.mjc_data)
-            print("[viewer] Interactive MuJoCo viewer launched.")
-            # Adjust free camera distance (camera 0 is usually free) if possible
-            try:
-                if 0 < sim.mjc_model.ncam:
-                    # If named camera 'camera' exists we leave it; we adjust the free camera (camid = -1) via scene camera
-                    cam = viewer.cam  # mujoco.viewer.Camera object
-                    cam.distance *= max(0.1, args.cam_dist_scale)
-                    print(f"[viewer] Scaled camera distance by {args.cam_dist_scale:.2f} -> {cam.distance:.3f}")
-            except Exception as ce:
-                print(f"[viewer] Camera distance scaling failed: {ce}")
-        except Exception as e:  # pragma: no cover
-            print(f"[viewer] Could not launch interactive viewer: {e}\nProceeding with offscreen rendering only.")
-
-    # Determine effective delay: if user didn't set, use sim.dt when visualizing
-    effective_delay = None
-    if internal_visualize and not args.no_vis:
-        if args.step_delay is None:
-            effective_delay = 0.01  # user-requested slower default
-        else:
-            effective_delay = max(0.0, args.step_delay)
-
-    try:
-        prev_high_idx = -1  # Track last printed high-level action index
-        for step_i, act in enumerate(expanded_actions):
-            high_idx = step_i // hold_steps
-            if high_idx != prev_high_idx:
-                # Print which high-level action is starting
-                print(
-                    f"\n>> Executing high-level action {high_idx + 1}/{actions_seq.shape[0]} "
-                    f"(holding {hold_steps} physics steps ~{hold_steps * sim.dt:.2f}s): "
-                    f"{actions_seq[high_idx].tolist()}"
-                )
-                prev_high_idx = high_idx
-            try:
-                obs, reward, done, info = sim.step(act)
-            except ValueError as e:
-                # First out-of-range violation surfaces here
-                print(f"Action error at step {step_i}: {e}", file=sys.stderr)
-                # Re-try with clipped action (already clipped internally after raising)
-                obs, reward, done, info = sim.step(np.clip(act, 0.0, 1.0))
-            observations.append(obs)
-            rewards.append(reward)
-            reward_terms_log.append(info.get("reward_terms", {}))
-            if "controls" in info:
-                controls_log.append(info["controls"])
-            if "actuated_lengths" in info:
-                lengths_log.append(info["actuated_lengths"])
-            if "rest_lengths" in info:
-                rest_lengths_log.append(info["rest_lengths"])
-
-            
-
-            # Offscreen frame (only needed for saving video); interactive viewer updates via viewer.sync()
-            frame = None
-            if args.video_save and internal_visualize:
-                frame = sim.render_frame()
-            elif args.video_save and not internal_visualize:
-                frame = sim.render_frame()
-            if frame is not None and args.video_save:
-                frames.append(frame)
-
-            if viewer is not None:
-                try:
-                    viewer.sync()
-                except Exception:
-                    pass
-            if effective_delay and effective_delay > 0:
-                time.sleep(effective_delay)
-
-    finally:
-        # Summary stats
-        print("\n=== Run Summary ===")
-        arr_rewards = np.array(rewards)
-        print(f"Total physics steps: {len(rewards)} (high-level actions: {actions_seq.shape[0]}; hold/action: {hold_steps})")
-        print(f"Reward sum: {arr_rewards.sum():.4f}  mean: {arr_rewards.mean():.4f}  std: {arr_rewards.std():.4f}")
-        print(f"Action clip violations: {sim.action_clip_violations}")
-
-        # Video save
-        if args.video_save and frames:
-            video_path = output_dir / "single_run.mp4"
-            sim.save_video(video_path, frames)
-            print(f"Saved video to {video_path}")
-
-        # Plots
-        if args.plots:
-            try:
-                import matplotlib.pyplot as plt
-                from mujoco_physics_engine.single_tensegrity_mjc_simulation import (
-                    SingleTensegrityMuJoCoSimulator as _S,
-                )
-
-                # Reuse existing basic plots
-                _S.plot_actions(expanded_actions, save_path=output_dir / "actions.png")
-                _S.plot_observations(np.asarray(observations), save_path=output_dir / "observations.png")
-                _S.plot_rewards(reward_terms_log, save_path=output_dir / "rewards.png")
-
-                # Extended plotting
-                t = np.arange(len(rewards)) * sim.dt
-
-                # 1. Controls (PID outputs)
-                if controls_log:
-                    controls_arr = np.asarray(controls_log)
-                    fig, ax = plt.subplots(figsize=(10,4))
-                    ax.plot(t[:controls_arr.shape[0]], controls_arr)
-                    ax.set_title("Control Inputs (PID Outputs) vs Time")
-                    ax.set_xlabel("Time (s)")
-                    ax.set_ylabel("Control Signal")
-                    ax.grid(True, alpha=0.3)
-                    fig.tight_layout()
-                    fig.savefig(output_dir / "controls.png", dpi=200)
-                    plt.close(fig)
-
-                # 2. Action timeline (expanded)
-                fig, ax = plt.subplots(figsize=(10,4))
-                ax.plot(t[:len(expanded_actions)], expanded_actions)
-                ax.set_title("Applied Normalized Actions vs Time (Expanded)")
-                ax.set_xlabel("Time (s)")
-                ax.set_ylabel("Action Value (0-1)")
-                ax.grid(True, alpha=0.3)
-                fig.tight_layout()
-                fig.savefig(output_dir / "actions_vs_time.png", dpi=200)
-                plt.close(fig)
-
-                # 3. Cable lengths (physical)
-                if lengths_log:
-                    lengths_arr = np.asarray(lengths_log)
-                    fig, ax = plt.subplots(figsize=(10,4))
-                    ax.plot(t[:lengths_arr.shape[0]], lengths_arr)
-                    ax.set_title("Cable Lengths vs Time")
-                    ax.set_xlabel("Time (s)")
-                    ax.set_ylabel("Length (m)")
-                    ax.grid(True, alpha=0.3)
-                    fig.tight_layout()
-                    fig.savefig(output_dir / "cable_lengths.png", dpi=200)
-                    plt.close(fig)
-
-                # 4. Rest (spring) lengths
-                if rest_lengths_log:
-                    rest_arr = np.asarray(rest_lengths_log)
-                    fig, ax = plt.subplots(figsize=(10,4))
-                    ax.plot(t[:rest_arr.shape[0]], rest_arr)
-                    ax.set_title("Rest (Spring) Lengths vs Time")
-                    ax.set_xlabel("Time (s)")
-                    ax.set_ylabel("Rest Length (m)")
-                    ax.grid(True, alpha=0.3)
-                    fig.tight_layout()
-                    fig.savefig(output_dir / "rest_lengths.png", dpi=200)
-                    plt.close(fig)
-
-                # 5. Total reward + components
-                if reward_terms_log:
-                    # Total reward already in rewards list
-                    fig, ax = plt.subplots(figsize=(10,4))
-                    ax.plot(t, rewards, label='total', color='black')
-                    # Component curves
-                    comp_keys = sorted(reward_terms_log[0].keys())
-                    for k in comp_keys:
-                        series = [d.get(k,0.0) for d in reward_terms_log]
-                        ax.plot(t[:len(series)], series, label=k)
-                    ax.set_title("Reward Components vs Time")
-                    ax.set_xlabel("Time (s)")
-                    ax.set_ylabel("Reward")
-                    ax.legend()
-                    ax.grid(True, alpha=0.3)
-                    fig.tight_layout()
-                    fig.savefig(output_dir / "reward_components.png", dpi=200)
-                    plt.close(fig)
-
-                # Diagnostics plot (target vs actual vs rest + control + error)
-                if hasattr(sim, 'diag_target_norm') and sim.diag_target_norm:
-                    try:
-                        tgt_norm = np.asarray(sim.diag_target_norm)               # (T, n)
-                        curr_len = np.asarray(sim.diag_curr_length)              # (T, n)
-                        rest_len = np.asarray(sim.diag_rest_length)              # (T, n)
-                        pid_u = np.asarray(sim.diag_pid_u)                       # (T, n)
-                        err = np.asarray(sim.diag_error)                         # (T, n)
-                        n_act = tgt_norm.shape[1]
-                        tt = np.arange(tgt_norm.shape[0]) * sim.dt
-                        # Convert target norm to physical length
-                        tgt_phys = sim.min_cable_length + tgt_norm * (sim.max_cable_length - sim.min_cable_length)
-
-                        cols = n_act
-                        fig, axes = plt.subplots(3, 1, figsize=(12, 10), sharex=True)
-
-                        # Lengths panel: plot per-actuator actual vs rest vs target (faint lines)
-                        for j in range(n_act):
-                            axes[0].plot(tt, tgt_phys[:, j], linestyle='--', alpha=0.5)
-                        for j in range(n_act):
-                            axes[0].plot(tt, rest_len[:, j], linestyle=':', alpha=0.7)
-                        for j in range(n_act):
-                            axes[0].plot(tt, curr_len[:, j], alpha=0.9)
-                        axes[0].set_title('Cable Lengths: target (--) rest (:) actual (solid)')
-                        axes[0].set_ylabel('Length (m)')
-                        axes[0].grid(alpha=0.3)
-
-                        # Control signals
-                        for j in range(n_act):
-                            axes[1].plot(tt, pid_u[:, j])
-                        axes[1].set_title('PID Control Outputs (u)')
-                        axes[1].set_ylabel('u')
-                        axes[1].grid(alpha=0.3)
-
-                        # Errors (target - current)
-                        for j in range(n_act):
-                            axes[2].plot(tt, err[:, j])
-                        axes[2].set_title('Length Error (target - current)')
-                        axes[2].set_xlabel('Time (s)')
-                        axes[2].set_ylabel('Error (m)')
-                        axes[2].grid(alpha=0.3)
-
-                        fig.tight_layout()
-                        fig.savefig(output_dir / 'diagnostics.png', dpi=200)
-                        plt.close(fig)
-                    except Exception as de:
-                        print(f"Diagnostics plotting failed: {de}")
-
-                print(f"Saved extended plots to {output_dir}")
-            except Exception as e:
-                print(f"Plotting failed: {e}")
-
-        # After your simulation
-        # Clean up interactive viewer
-        if viewer is not None:
-            try:
-                viewer.close()
-            except Exception:
-                pass
-
-        # After simulation loop ends
-        print("\n=== CONTROLS ANALYSIS ===")
-        if controls_log:
-            # Quick summary
-            controls_array = np.array(controls_log)
-            print(f"Collected {len(controls_log)} control records")
-            print(f"Control shape: {controls_array.shape}")
-            print(f"Control range: [{np.min(controls_array):.3f}, {np.max(controls_array):.3f}]")
-            
-            # Save to file
-            controls_data = {
-                "controls_log": controls_array.tolist(),
-                "num_actuators": controls_array.shape[1],
-                "total_steps": len(controls_log)
-            }
-            
-            controls_file = output_dir / "controls_log.json"
-            with open(controls_file, 'w') as f:
-                json.dump(controls_data, f, indent=2)
-            
-            print(f"Controls saved to: {controls_file}")
-            
-            # Generate plot if requested
-            if args.plots:
-                plot_controls_log(controls_log, output_dir)
-        else:
-            print("No controls collected")
-        print("========================")
+        # Run simple test
+        print("Usage: python run_single.py [gait_file.json] [num_cycles]")
+        print("Running with built-in test pattern...\n")
+        run_simple_test()
 
 
 if __name__ == "__main__":

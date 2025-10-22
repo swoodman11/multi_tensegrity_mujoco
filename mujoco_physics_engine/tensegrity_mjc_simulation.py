@@ -2,6 +2,7 @@ import multiprocessing
 from pathlib import Path
 from typing import List
 from PIL import Image
+import time
 
 import mujoco
 import numpy as np
@@ -39,10 +40,12 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
                  controller_ki: float = 0.0,
                  controller_kd: float = 1.0,
                  control_penalty_cap: float = 100.0,
-                 zoom_out_factor: float = 2.0):
+                 zoom_out_factor: float = 2.0,
+                 render_pause: float = 0.01):
         super().__init__(xml_path, visualize, render_size, render_fps)
         self.debug_enabled = debug_enabled
         self.control_penalty_cap = float(control_penalty_cap)
+        self.render_pause = render_pause  # Store pause duration
         self.min_cable_length = 0.6 # unit: meters*10 # NOTE: was 0.6 but changed to match PID default
         self.max_cable_length = 1.6 # unit: meters*10 # NOTE: was 2.4 but changed to match PID default
         self.n_actuators = num_actuated_cables
@@ -225,7 +228,12 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
                 else:
                     controls = np.zeros(self.n_actuators, dtype=float)
 
-                # 2. Apply motor updates to tendon rest lengths
+            # 2. Apply motor updates and step physics for 100 timesteps (1 second)
+            # This matches handmade gait demonstrations and realistic cable actuation speed
+            steps_per_action = int(1.0 / self.dt)  # 100 steps for dt=0.01
+            
+            for step_i in range(steps_per_action):
+                # Update tendon rest lengths
                 for tendon_id in self.actuated_ids:
                     action_idx = self.actuated_ids.index(tendon_id)
                     ctrl = controls[action_idx]
@@ -233,12 +241,19 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
                     dl = self.cable_motors[action_idx].compute_cable_length_delta(ctrl, self.dt)
                     new_rest_length = np.clip(cable_rest_length + dl, self.min_cable_length, self.max_cable_length)
                     self.mjc_model.tendon_lengthspring[tendon_id] = new_rest_length
-                    debug_print(f"Cable {tendon_id} dl={dl:.4f} ctrl={ctrl:.3f} newL={new_rest_length:.3f}",
-                                "tensegrity_mjc_simulation.py", self.debug_enabled)
+                    
+                    if step_i == 0:  # Only debug print first iteration to avoid spam
+                        debug_print(f"Cable {tendon_id} dl={dl:.4f} ctrl={ctrl:.3f} newL={new_rest_length:.3f}",
+                                    "tensegrity_mjc_simulation.py", self.debug_enabled)
 
-                # 3. Step physics
+                # Step physics once
                 mujoco.mj_step(self.mjc_model, self.mjc_data)
                 self.forward()
+                
+                # Render if visualization is enabled (smooth rendering during action execution)
+                if self.visualize and step_i % 1 == 0:  # Render every 5th physics step to balance smoothness and performance
+                    self.render()
+                    time.sleep(self.render_pause)  # Pause to slow down visualization
 
         # Get end points for locomotion reward
         end_pts = self.get_endpts()
