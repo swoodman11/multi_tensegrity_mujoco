@@ -156,18 +156,15 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         info : dict containing detailed reward & penalty component breakdowns,
                plus control signals and the applied normalized target action.
         """
-        ctrl_idx = 0
+        # Compute physics timesteps per action
+        steps_per_action = int(1.0 / self.dt)  # 100 steps for dt=0.01
+
+        # Control signals for each actuator
         controls = None
 
-        # NOTE: double check that target_lengths is in [0, 1] range
-
-        # Adding some debugging here (Setph)
-
-        # self.apply_random_perturbation() #can comment
-
-        # Convert target_lengths to controls in [-1, 1]
+        # Check that target lengths are provided
         if target_lengths is not None:
-            controls = np.zeros(self.n_actuators)  # NumPy array
+
             # Normalize and cache last action for observations
             try:
                 desired_norms = np.asarray(target_lengths, dtype=float)
@@ -178,49 +175,64 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
             # Update previous action buffer used by observations
             if hasattr(self, 'prev_action'):
                 self.prev_action = desired_norms.astype(np.float32)
-            # Compute controls for all actuators
-            for i in range(min(len(target_lengths), self.n_actuators)):
-                desired_norm = float(desired_norms[i])
-                rest_length = self.mjc_model.tendon_lengthspring[self.actuated_ids[i], 0]
-                s0 = self.mjc_data.sensor(f"pos_{self.cable_sites[self.actuated_ids[i]][0]}").data
-                s1 = self.mjc_data.sensor(f"pos_{self.cable_sites[self.actuated_ids[i]][1]}").data
-                curr_length = np.linalg.norm(s1 - s0)
-                ctrl, _ = self.pids[i].update_control_by_target_norm_length(
-                    curr_length, desired_norm, rest_length,
-                    self.min_cable_length, self.max_cable_length
-                )
-                controls[i] = -1.0 * ctrl
-            # Mirror subset (domain-specific constraint)
-            # if self.n_actuators >= 6:
-            #     # Mirror t1's second half to t2's first half
-            #     for i in range(3):
-            #         controls[i+6] = controls[i+3]
-            #     # Mirror t2's second half to t3's first half
-            #     for i in range(3):
-            #         controls[i+12] = controls[i+9]
-        else:
-            controls = np.zeros(self.n_actuators, dtype=float)
 
-        # 2. Apply motor updates and step physics for 100 timesteps (1 second)
-        steps_per_action = int(1.0 / self.dt)  # 100 steps for dt=0.01
-        for step_i in range(steps_per_action):
-            # Update tendon rest lengths
-            for tendon_id in self.actuated_ids:
-                action_idx = self.actuated_ids.index(tendon_id)
-                ctrl = controls[action_idx]
-                cable_rest_length = self.mjc_model.tendon_lengthspring[tendon_id, 0]
-                dl = self.cable_motors[action_idx].compute_cable_length_delta(ctrl, self.dt)
-                new_rest_length = np.clip(cable_rest_length + dl, self.min_cable_length, self.max_cable_length)
-                self.mjc_model.tendon_lengthspring[tendon_id] = new_rest_length
-                if step_i == 0:
-                    debug_print(f"Cable {tendon_id} dl={dl:.4f} ctrl={ctrl:.3f} newL={new_rest_length:.3f}",
-                                "tensegrity_mjc_simulation_config_1.py", self.debug_enabled)
-            # Step physics once
-            mujoco.mj_step(self.mjc_model, self.mjc_data)
-            self.forward()
-            # Render if visualization is enabled
-            if self.visualize:
-                self.render(mode='human')
+            # Iterate over timesteps to apply motor controls and step physics
+            for step_i in range(steps_per_action):
+
+                # Initialize control signals for this step
+                controls = np.zeros(self.n_actuators, dtype=float)
+
+                # Compute control signals for each actuator for this step
+                for i in range(len(target_lengths)):
+                    # lengths = target_lengths[i]
+                    # Get current rest length
+                    rest_length = self.mjc_model.tendon_lengthspring[self.actuated_ids[i], 0]
+                    # Get desired normalized length
+                    desired_norm = float(desired_norms[i])
+                    # Calculate current length
+                    s0 = self.mjc_data.sensor(f"pos_{self.cable_sites[self.actuated_ids[i]][0]}").data
+                    s1 = self.mjc_data.sensor(f"pos_{self.cable_sites[self.actuated_ids[i]][1]}").data
+                    curr_length = np.linalg.norm(s1 - s0)
+                    # Calculate control action
+                    ctrl, _ = self.pids[i].update_control_by_target_norm_length(
+                        curr_length, desired_norm, rest_length,
+                        self.min_cable_length, self.max_cable_length
+                    )
+                    # Store control action
+                    controls[i] = -1.0 * ctrl
+                    # Mirror subset (domain-specific constraint)
+                    if self.n_actuators >= 9:
+                        for i in range(3):
+                            if i+6 < self.n_actuators and i+3 < self.n_actuators:
+                                controls[i+6] = controls[i+3]
+
+                # Update tendon rest lengths based on control action
+                for tendon_id in self.actuated_ids:
+                    # Find corresponding action index
+                    action_idx = self.actuated_ids.index(tendon_id)
+                    # Get the correct control for the current tendon
+                    ctrl = controls[action_idx]
+                    # Get the current rest length
+                    cable_rest_length = self.mjc_model.tendon_lengthspring[tendon_id, 0]
+                    # Compute the change in rest length due to the control action
+                    dl = self.cable_motors[action_idx].compute_cable_length_delta(ctrl, self.dt)
+                    # Update the rest length, ensuring it stays within bounds
+                    new_rest_length = np.clip(cable_rest_length + dl, self.min_cable_length, self.max_cable_length)
+                    # Apply the new rest length to the MuJoCo model
+                    self.mjc_model.tendon_lengthspring[tendon_id] = new_rest_length
+                    # Debug print
+                    if step_i == 0:  # Only debug print first iteration to avoid spam
+                        debug_print(f"Cable {tendon_id} dl={dl:.4f} ctrl={ctrl:.3f} newL={new_rest_length:.3f}",
+                                    "tensegrity_mjc_simulation.py", self.debug_enabled)
+
+                # Step physics once all controls are set
+                mujoco.mj_step(self.mjc_model, self.mjc_data)
+                self.forward()
+                
+                # Render if visualization is enabled (smooth rendering during action execution)
+                if self.visualize and step_i % 1 == 0:  # Render every 5th physics step to balance smoothness and performance
+                    self.render()
+                    time.sleep(self.render_pause)  # Pause to slow down visualization
 
         # Get end points for locomotion reward
         end_pts = self.get_endpts()

@@ -496,7 +496,7 @@ def main():
         print(f"🚀 Using CPU Small configuration ({system_ram_gb:.1f}GB RAM)")
     
     # Select gait JSON file - using BEST GAIT from 3bar_gaits.py
-    gait_json = "handmade_gait_best_rolling.json"  # Best quasi-static rolling gait (6 steps, no rest)
+    gait_json = "gaits/handmade_gait_best_rolling.json"  # Best quasi-static rolling gait (6 steps, no rest)
     
     if not Path(gait_json).exists():
         print(f"\n❌ Gait file not found: {gait_json}")

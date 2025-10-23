@@ -190,63 +190,81 @@ class SingleTensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         done : bool
         info : dict
         """
+        # Compute physics timesteps per action
+        steps_per_action = int(1.0 / self.dt)  # 100 steps for dt=0.01
+
+        # Control signals for each actuator
         controls = None
-        
-        # Convert target_lengths to controls in [-1, 1]
+
+        # Check that target lengths are provided
         if target_lengths is not None:
-            controls = np.zeros(self.n_actuators, dtype=float)
-            
-            # Normalize and cache last action
+
+            # Normalize and cache last action for observations
             try:
                 desired_norms = np.asarray(target_lengths, dtype=float)
             except Exception:
                 desired_norms = np.array(list(target_lengths), dtype=float)
-            
             # Enforce [0,1] without raising to keep sim running
             desired_norms = np.clip(desired_norms, 0.0, 1.0)
-            self.prev_action = desired_norms.astype(np.float32)
-            
-            # 1. Compute PID controls for each actuator
-            for i in range(self.n_actuators):
-                desired_norm = float(desired_norms[i])
-                rest_length = self.mjc_model.tendon_lengthspring[self.actuated_ids[i], 0]
-                
-                # Get current cable length from site positions
-                s0 = self.mjc_data.sensor(f"pos_{self.cable_sites[i][0]}").data
-                s1 = self.mjc_data.sensor(f"pos_{self.cable_sites[i][1]}").data
-                curr_length = np.linalg.norm(s1 - s0)
-                
-                # PID control
-                ctrl, _ = self.pids[i].update_control_by_target_norm_length(
-                    curr_length, desired_norm, rest_length,
-                    self.min_cable_length, self.max_cable_length
-                )
-                controls[i] = -1.0 * ctrl
-            
-            # 2. Apply motor updates and step physics for 100 timesteps (1 second)
-            # This matches the handmade gait demonstrations and realistic cable actuation speed
-            steps_per_action = int(1.0 / self.dt)  # 100 steps for dt=0.01
-            
+            # Update previous action buffer used by observations
+            if hasattr(self, 'prev_action'):
+                self.prev_action = desired_norms.astype(np.float32)
+
+            # Iterate over timesteps to apply motor controls and step physics
             for step_i in range(steps_per_action):
-                # Update tendon rest lengths
+
+                # Initialize control signals for this step
+                controls = np.zeros(self.n_actuators, dtype=float)
+
+                # Compute control signals for each actuator for this step
+                for i in range(len(target_lengths)):
+                    # lengths = target_lengths[i]
+                    # Get current rest length
+                    rest_length = self.mjc_model.tendon_lengthspring[self.actuated_ids[i], 0]
+                    # Get desired normalized length
+                    desired_norm = float(desired_norms[i])
+                    # Calculate current length
+                    s0 = self.mjc_data.sensor(f"pos_{self.cable_sites[self.actuated_ids[i]][0]}").data
+                    s1 = self.mjc_data.sensor(f"pos_{self.cable_sites[self.actuated_ids[i]][1]}").data
+                    curr_length = np.linalg.norm(s1 - s0)
+                    # Calculate control action
+                    ctrl, _ = self.pids[i].update_control_by_target_norm_length(
+                        curr_length, desired_norm, rest_length,
+                        self.min_cable_length, self.max_cable_length
+                    )
+                    # Store control action
+                    controls[i] = -1.0 * ctrl
+                    # Mirror subset (domain-specific constraint)
+                    if self.n_actuators >= 9:
+                        for i in range(3):
+                            if i+6 < self.n_actuators and i+3 < self.n_actuators:
+                                controls[i+6] = controls[i+3]
+
+                # Update tendon rest lengths based on control action
                 for tendon_id in self.actuated_ids:
+                    # Find corresponding action index
                     action_idx = self.actuated_ids.index(tendon_id)
+                    # Get the correct control for the current tendon
                     ctrl = controls[action_idx]
+                    # Get the current rest length
                     cable_rest_length = self.mjc_model.tendon_lengthspring[tendon_id, 0]
+                    # Compute the change in rest length due to the control action
                     dl = self.cable_motors[action_idx].compute_cable_length_delta(ctrl, self.dt)
+                    # Update the rest length, ensuring it stays within bounds
                     new_rest_length = np.clip(cable_rest_length + dl, self.min_cable_length, self.max_cable_length)
+                    # Apply the new rest length to the MuJoCo model
                     self.mjc_model.tendon_lengthspring[tendon_id] = new_rest_length
-                    
+                    # Debug print
                     if step_i == 0:  # Only debug print first iteration to avoid spam
                         debug_print(f"Cable {tendon_id} dl={dl:.4f} ctrl={ctrl:.3f} newL={new_rest_length:.3f}",
-                                   "single_tensegrity_mjc_simulation.py", self.debug_enabled)
-                
-                # Step physics once
+                                    "tensegrity_mjc_simulation.py", self.debug_enabled)
+
+                # Step physics once all controls are set
                 mujoco.mj_step(self.mjc_model, self.mjc_data)
                 self.forward()
                 
                 # Render if visualization is enabled (smooth rendering during action execution)
-                if self.visualize and step_i % 5 == 0:  # Render every 5th physics step to balance smoothness and performance
+                if self.visualize and step_i % 1 == 0:  # Render every 5th physics step to balance smoothness and performance
                     self.render()
                     time.sleep(self.render_pause)  # Pause to slow down visualization
         

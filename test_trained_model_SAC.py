@@ -1,42 +1,4 @@
-# from stable_baselines3 import PPO
-# from tensegrity_env import TensegrityEnv
-# import time
-
-# # Load the trained model
-# model = PPO.load("ppo_tensegrity_gait")
-# env = TensegrityEnv()
-
-# # Test for 3 episodes
-# for episode in range(3):
-#     obs, info = env.reset()
-#     total_reward = 0
-#     steps = 0
-    
-#     print(f"\n=== Episode {episode + 1} ===")
-    
-#     for step in range(1000):  # Max steps per episode  #tensorboard --logdir=./ppo_tensegrity_tensorboard/ --port=6007
-#         action, _ = model.predict(obs, deterministic=True)
-#         obs, reward, done, truncated, info = env.step(action)
-        
-#         total_reward += reward
-#         steps += 1
-        
-#         # Render if you want to see it (might be slow)
-#         # env.render()
-#         # time.sleep(0.01)
-        
-#         if done or truncated:
-#             break
-    
-#     print(f"Episode {episode + 1}: {steps} steps, Total reward: {total_reward:.2f}")
-
-# # env.close()
-
-from stable_baselines3 import PPO
-
 from stable_baselines3 import SAC
-
-from stable_baselines3 import TD3
 from tensegrity_env import TensegrityEnv
 import time
 import os
@@ -472,9 +434,9 @@ for step in range(max_episode_steps):  # Max steps per episode
         frame = env.sim.render_frame()
         if frame is not None:
             video_frames.append(frame)
-    
-    # Print progress every 50 steps
-    if step % 50 == 0:
+
+    # Print progress every 10% of max_episode_steps
+    if step % (max_episode_steps // 10) == 0:
         print(f"Step {step}: Reward = {reward:.3f}, Total = {total_reward:.2f}")
     
     if done or truncated:

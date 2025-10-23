@@ -84,6 +84,7 @@ def run_simple_test():
     pid_log = []
     cable_length_log = []
     reward_log = []
+    desired_cable_length_log = []
 
     for cycle in range(num_cycles):
         print(f"\n   Cycle {cycle + 1}/{num_cycles}")
@@ -97,6 +98,8 @@ def run_simple_test():
             pid_log.append(np.array(info['controls']) if info['controls'] is not None else np.zeros(sim.n_actuators))
             cable_length_log.append(sim._get_actuated_cable_lengths())
             reward_log.append(reward)
+            desired_lengths = sim.min_cable_length + action * (sim.max_cable_length - sim.min_cable_length)
+            desired_cable_length_log.append(desired_lengths)
 
     print(f"\n✅ Test complete!")
     print(f"   Total reward: {total_reward:.2f}")

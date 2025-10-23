@@ -177,18 +177,16 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         info : dict containing detailed reward & penalty component breakdowns,
                plus control signals and the applied normalized target action.
         """
-        ctrl_idx = 0
+
+        # Compute physics timesteps per action
+        steps_per_action = int(1.0 / self.dt)  # 100 steps for dt=0.01
+
+        # Control signals for each actuator
         controls = None
 
-        # NOTE: double check that target_lengths is in [0, 1] range
-
-        # Adding some debugging here (Setph)
-
-        # self.apply_random_perturbation() #can comment
-
-        # Convert target_lengths to controls in [-1, 1]
+        # Check that target lengths are provided
         if target_lengths is not None:
-            controls = np.zeros(self.n_actuators)  # NumPy array
+
             # Normalize and cache last action for observations
             try:
                 desired_norms = np.asarray(target_lengths, dtype=float)
@@ -199,54 +197,57 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
             # Update previous action buffer used by observations
             if hasattr(self, 'prev_action'):
                 self.prev_action = desired_norms.astype(np.float32)
-            # Legacy loop structure retained but single execution due to early return below
-            for i in range(len(target_lengths)):
-                lengths = target_lengths[i]
-                rest_length = self.mjc_model.tendon_lengthspring[self.actuated_ids[i], 0]
 
-                # # Normalize lengths to [0, 1]
-                # norm_length = (lengths - self.min_cable_length) / (self.max_cable_length - self.min_cable_length)
-                # 1. Controls: convert target normalized lengths to control signals [-1,1]
-                if target_lengths is not None:
-                    controls = np.zeros(self.n_actuators, dtype=float)
-                    for i in range(min(len(target_lengths), self.n_actuators)):
-                        desired_norm = float(desired_norms[i])
-                        rest_length = self.mjc_model.tendon_lengthspring[self.actuated_ids[i], 0]
-                        s0 = self.mjc_data.sensor(f"pos_{self.cable_sites[self.actuated_ids[i]][0]}").data
-                        s1 = self.mjc_data.sensor(f"pos_{self.cable_sites[self.actuated_ids[i]][1]}").data
-                        curr_length = np.linalg.norm(s1 - s0)
-                        ctrl, _ = self.pids[i].update_control_by_target_norm_length(
-                            curr_length, desired_norm, rest_length,
-                            self.min_cable_length, self.max_cable_length
-                        )
-                        controls[i] = -1.0 * ctrl
+            # Iterate over timesteps to apply motor controls and step physics
+            for step_i in range(steps_per_action):
+
+                # Initialize control signals for this step
+                controls = np.zeros(self.n_actuators, dtype=float)
+
+                # Compute control signals for each actuator for this step
+                for i in range(len(target_lengths)):
+                    # lengths = target_lengths[i]
+                    # Get current rest length
+                    rest_length = self.mjc_model.tendon_lengthspring[self.actuated_ids[i], 0]
+                    # Get desired normalized length
+                    desired_norm = float(desired_norms[i])
+                    # Calculate current length
+                    s0 = self.mjc_data.sensor(f"pos_{self.cable_sites[self.actuated_ids[i]][0]}").data
+                    s1 = self.mjc_data.sensor(f"pos_{self.cable_sites[self.actuated_ids[i]][1]}").data
+                    curr_length = np.linalg.norm(s1 - s0)
+                    # Calculate control action
+                    ctrl, _ = self.pids[i].update_control_by_target_norm_length(
+                        curr_length, desired_norm, rest_length,
+                        self.min_cable_length, self.max_cable_length
+                    )
+                    # Store control action
+                    controls[i] = -1.0 * ctrl
                     # Mirror subset (domain-specific constraint)
                     if self.n_actuators >= 9:
                         for i in range(3):
                             if i+6 < self.n_actuators and i+3 < self.n_actuators:
                                 controls[i+6] = controls[i+3]
-                else:
-                    controls = np.zeros(self.n_actuators, dtype=float)
 
-            # 2. Apply motor updates and step physics for 100 timesteps (1 second)
-            # This matches handmade gait demonstrations and realistic cable actuation speed
-            steps_per_action = int(1.0 / self.dt)  # 100 steps for dt=0.01
-            
-            for step_i in range(steps_per_action):
-                # Update tendon rest lengths
+                # Update tendon rest lengths based on control action
                 for tendon_id in self.actuated_ids:
+                    # Find corresponding action index
                     action_idx = self.actuated_ids.index(tendon_id)
+                    # Get the correct control for the current tendon
                     ctrl = controls[action_idx]
+                    # Get the current rest length
                     cable_rest_length = self.mjc_model.tendon_lengthspring[tendon_id, 0]
+                    # Compute the change in rest length due to the control action
                     dl = self.cable_motors[action_idx].compute_cable_length_delta(ctrl, self.dt)
+                    # Update the rest length, ensuring it stays within bounds
                     new_rest_length = np.clip(cable_rest_length + dl, self.min_cable_length, self.max_cable_length)
+                    # Apply the new rest length to the MuJoCo model
                     self.mjc_model.tendon_lengthspring[tendon_id] = new_rest_length
-                    
+                    # Debug print
                     if step_i == 0:  # Only debug print first iteration to avoid spam
                         debug_print(f"Cable {tendon_id} dl={dl:.4f} ctrl={ctrl:.3f} newL={new_rest_length:.3f}",
                                     "tensegrity_mjc_simulation.py", self.debug_enabled)
 
-                # Step physics once
+                # Step physics once all controls are set
                 mujoco.mj_step(self.mjc_model, self.mjc_data)
                 self.forward()
                 
@@ -254,6 +255,8 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
                 if self.visualize and step_i % 1 == 0:  # Render every 5th physics step to balance smoothness and performance
                     self.render()
                     time.sleep(self.render_pause)  # Pause to slow down visualization
+
+        ### Reward and Penalty Calculations ###
 
         # Get end points for locomotion reward
         end_pts = self.get_endpts()
@@ -267,7 +270,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         z_hover = 0.03                    # 3 cm: penalize skating just above ground
         z_lift_enter, z_lift_exit = 0.10, 0.09  # lift hysteresis (enter >= 10cm, exit <= 9cm)
         
-        # Contact mask with hysteresis
+        # Contact mask with hysteresis (checked)
         if not hasattr(self, 'ground_state'):
             self.ground_state = np.zeros_like(end_pts_z, dtype=bool)
         prev_ground_state = self.ground_state
@@ -452,7 +455,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
             endpoint_height_reward
             + lifted_centroid_xy_reward_weight * lifted_centroid_xy_reward
             + grounded_centroid_xy_reward_weight * grounded_centroid_xy_reward
-            + 24.0 * com_step_progress
+            + 10.0 * com_step_progress
             + 7.0 * lifted_swing_reward
             + velocity_reward
             + stall_penalty
@@ -530,13 +533,13 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
                 self.direction_angles.pop(0)
         
         # Calculate reward if we have enough history
-        if len(self.velocity_window) >= 5:
+        if len(self.velocity_window) >= 3:
             # Average speed over window
             speeds = [np.linalg.norm(v) for v in self.velocity_window]
             avg_speed = np.mean(speeds)
             
             # Calculate direction consistency
-            if len(self.direction_angles) >= 5:
+            if len(self.direction_angles) >= 3:
                 # Use circular variance for angles
                 angles = np.array(self.direction_angles)
                 
@@ -573,7 +576,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
             # Consistency bonus (scaled by speed)
             # Only apply consistency when actually moving
             if avg_speed > 0.1:
-                consistency_bonus = consistency_score * 10.0
+                consistency_bonus = consistency_score * 20.0
             else:
                 consistency_bonus = 0.0
             
