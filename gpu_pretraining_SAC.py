@@ -84,7 +84,7 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
         print("\n1️⃣ Environment Setup...")
         start_time = time.time()
         
-        env = TensegrityEnv(visualize=False, max_episode_steps=50)  # No visualization for GPU training
+        env = TensegrityEnv(visualize=False, max_episode_steps=10)  # No visualization for GPU training
         
         # CRITICAL validation per coding guidelines
         expected_obs_dim = 96  # From coding guidelines
@@ -163,7 +163,7 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
             elif "rtx4090" in config_name:
                 num_cycles = 100 #1000
             elif "rtx2080ti_32gb" in config_name:
-                num_cycles = 300
+                num_cycles = 100
             else:
                 num_cycles = 100
         else:
@@ -175,7 +175,7 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
             # For non-repeatable gaits, start each demo cycle from a clean initial state
             if reset_each_cycle:
                 obs, _ = env.reset()
-            if cycle % 100 == 0 and cycle > 0:
+            if cycle % 10 == 0 and cycle > 0:
                 print(f"     Progress: {cycle}/{num_cycles} cycles completed")
                 
             for step_idx, action in enumerate(roll_sequence):
@@ -321,13 +321,14 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
         
 
         # Set up evaluation environment (no render)
-        eval_env = TensegrityEnv(visualize=False, max_episode_steps=50)
+        eval_env = TensegrityEnv(visualize=False, max_episode_steps=20)
 
         eval_callback = EvalCallback(
             eval_env,
             best_model_save_path=f"./logs/best_model_{config_name}/",
             log_path=f"./logs/evals_{config_name}/",
-            eval_freq=10000,                   # <- 🔁 Evaluate every 10k steps
+            eval_freq=2000,                   # <- 🔁 Evaluate every 2k steps
+            n_eval_episodes=10,
             deterministic=True,
             render=False,
             verbose=1
@@ -336,7 +337,7 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
         # Execute training with progress bar
         model.learn(
             total_timesteps=total_timesteps,
-            # callback=eval_callback,
+            callback=eval_callback,
             progress_bar=True
         )
         
@@ -432,23 +433,23 @@ def gpu_optimized_configs():
                 activation_fn=torch.nn.ReLU
             )
         },
-        "rtx2080ti_32gb_balanced": {
-            # Balanced config for 11GB VRAM + 32GB RAM, good throughput without OOM
-            "learning_rate": 3e-4,
-            "batch_size": 512,
-            "gamma": 0.995,
-            "ent_coef": 0.05,
-            "policy_kwargs": dict(
-                net_arch=[512, 512, 256],
-                activation_fn=torch.nn.ReLU
-            )
-        },
+        # "rtx2080ti_32gb_balanced": {
+        #     # Balanced config for 11GB VRAM + 32GB RAM, good throughput without OOM
+        #     "learning_rate": 3e-4,
+        #     "batch_size": 512,
+        #     "gamma": 0.995,
+        #     "ent_coef": 0.05,
+        #     "policy_kwargs": dict(
+        #         net_arch=[512, 512, 256],
+        #         activation_fn=torch.nn.ReLU
+        #     )
+        # },
         "rtx2080ti_32gb_efficient": {
             # Faster training wall-clock; smaller nets and batches
-            "learning_rate": 4e-4,
+            "learning_rate": 2e-4,
             "batch_size": 384,
             "gamma": 0.99,
-            "ent_coef": 0.05,
+            "ent_coef": 0.1,
             "policy_kwargs": dict(
                 net_arch=[256, 256, 128],
                 activation_fn=torch.nn.ReLU
@@ -531,7 +532,7 @@ def main():
     elif "2080" in gpu_name and system_ram_gb >= 24:
         # Favor faster wall-clock with 2M steps; use the efficient config only
         selected_configs = {"rtx2080ti_32gb_efficient": configs["rtx2080ti_32gb_efficient"]}
-        timesteps = 2_500_000
+        timesteps = 5_000
         cycles = 10  # fewer demo cycles to cut pretraining time
         print(f"🚀 RTX 2080 Ti + 32GB RAM detected! Using efficient configuration for ~2M steps")
         
