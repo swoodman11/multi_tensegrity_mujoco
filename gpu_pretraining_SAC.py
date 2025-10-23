@@ -257,7 +257,7 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
         print("\n1️⃣ Environment Setup...")
         start_time = time.time()
         
-        env = TensegrityEnv(visualize=False, max_episode_steps=500)  # Training environment with episode limits
+        env = TensegrityEnv(visualize=False, max_episode_steps=20)  # Training environment with episode limits
         
         # CRITICAL validation per coding guidelines
         expected_obs_dim = 96  # From coding guidelines
@@ -522,7 +522,7 @@ def gpu_pretraining_with_roll_sequence(config_name, model_params, total_timestep
         
 
         # Set up evaluation environment (no render)
-        eval_env = TensegrityEnv(visualize=False, max_episode_steps=500)
+        eval_env = TensegrityEnv(visualize=False, max_episode_steps=50)
 
         # Use custom directional evaluation callback
         # Tests 8 random directions + 8 cardinal directions (0°, 45°, ..., 315°)
@@ -649,22 +649,18 @@ def gpu_optimized_configs():
             )
         },
         "rtx2080ti_32gb_efficient": {
-            # MATCHED TO SAC_34 (20251019_223958) - PROVEN CONFIGURATION
-            # Extracted from saved model hyperparameters
-            "learning_rate": 1.5e-4,      # Reduced from 2e-4 to stabilize critic loss
-            "batch_size": 2048,           # SAC_34 value: 2048
-            "gamma": 0.99,                # SAC_34 value: 0.99
-            "ent_coef": 0.05,             # SAC_34 value: 0.05 (fixed, not auto)
-            "buffer_size": 500_000,       # SAC_34 value: 500,000
-            "tau": 0.005,                 # SAC_34 value: 0.005 (target network update)
-            "target_entropy": -12.0,      # SAC_34 value: -12.0
-            "learning_starts": 5000,      # Reasonable default
-            "train_freq": (4, "step"),    # Train every 4 steps
-            "gradient_steps": 4,          # Multiple gradient steps per env step
+            "learning_rate": 1.5e-4,
+            "batch_size": 2048,
+            "gamma": 0.99,
+            "ent_coef": 0.05,
+            "buffer_size": 50_000,
+            "tau": 0.005,
+            "target_entropy": -12.0,
+            "learning_starts": 5000,
+            "train_freq": (4, "step"),
+            "gradient_steps": 4,
             "policy_kwargs": dict(
-                # SAC_34 Actor: 98 → 512 → 512 → 256 → 12
-                # SAC_34 Critic: 110 → 512 → 512 → 256 → 1
-                net_arch=[512, 512, 256],  # Matches SAC_34 architecture exactly
+                net_arch=[512, 512, 256],
                 activation_fn=torch.nn.ReLU
             )
         },
@@ -745,8 +741,8 @@ def main():
     elif "2080" in gpu_name and system_ram_gb >= 24:
         # EXTENDED VALIDATION: 150k timesteps with new walking/rolling reward structure
         selected_configs = {"rtx2080ti_32gb_efficient": configs["rtx2080ti_32gb_efficient"]}
-        timesteps = 30_000  # Extended validation to assess new reward structure (change to 500_000 for full training)
-        cycles = 25  # Reasonable demo cycles
+        timesteps = 5000  
+        cycles = 20
         print(f"🚀 RTX 2080 Ti + 32GB RAM - EXTENDED VALIDATION (150k steps)")
         print(f"   Using {timesteps:,} timesteps and {cycles} demo cycles")
         print(f"   Will evaluate every 10k steps (15 total evaluations, 10 episodes each)")
