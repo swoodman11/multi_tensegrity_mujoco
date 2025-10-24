@@ -5,6 +5,7 @@ import json
 import numpy as np
 import matplotlib.pyplot as plt
 from mujoco_physics_engine.tensegrity_mjc_simulation_config_1 import *
+import time
 
 
 def visualize_reward_components():
@@ -499,23 +500,23 @@ def run_roll_sequence(sequence_json: str | None = None, repeats: int = 1, visual
             sim.exploration_tracking_initialized = True
             print(f"Exploration tracking initialized after reset. Origin set to: {sim.origin_pos}")
         
-        # Run the simulation for multiple steps with these target lengths
-        for step in range(num_steps_per_sequence):
-            # Only one sim_step per action; all sub-stepping and visualization are handled inside sim.sim_step
-            current_time = step_counter * sim.dt
-            time_data.append(current_time)
+        # # Run the simulation for multiple steps with these target lengths
+        # for step in range(num_steps_per_sequence):
+        #     # Only one sim_step per action; all sub-stepping and visualization are handled inside sim.sim_step
+        #     current_time = step_counter * sim.dt
+        #     time_data.append(current_time)
 
-            end_pts = sim.get_endpts()
-            prev_pos = end_pts.mean(axis=0)
-            obs, reward, done, info = sim.sim_step(target_lengths)
-            reward_data.append(reward)
+            # end_pts = sim.get_endpts()
+            # prev_pos = end_pts.mean(axis=0)
+        obs, reward, done, info = sim.sim_step(target_lengths)
+        reward_data.append(reward)
 
             # Optionally collect diagnostic data here if needed (see original code for details)
             # For brevity, only main step logic is shown
 
-            step_counter += 1
-            if done:
-                break
+            # step_counter += 1
+            # if done:
+            #     break
                 
         # Add the frames to our collection
         if frames:

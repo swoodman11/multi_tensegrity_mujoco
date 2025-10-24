@@ -267,6 +267,11 @@ class SingleTensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
                 if self.visualize and step_i % 1 == 0:  # Render every 5th physics step to balance smoothness and performance
                     self.render()
                     time.sleep(self.render_pause)  # Pause to slow down visualization
+
+        else:
+            # Raise critical error if no target lengths provided
+            print("Target lengths must be provided for sim_step. Controls set to zero.")
+            controls = np.zeros(self.n_actuators, dtype=float)
         
         # ===== REWARD COMPUTATION (copied from dual robot) =====
         
@@ -383,7 +388,7 @@ class SingleTensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         # --- Direction Consistency Streak Reward ---
         # Track the direction of COM movement and reward streaks of consistent direction
         direction_streak_reward = 0.0
-        direction_streak_weight = 5.0  # Tune this weight as needed
+        direction_streak_weight = 10.0  # Tune this weight as needed
         direction_cos_threshold = 0.92  # ~23 degrees, cos(angle)
         direction_decay = 0.5  # How much to decay streak on inconsistency
         if not hasattr(self, 'direction_streak'):
@@ -470,10 +475,6 @@ class SingleTensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         lift_dwell_penalty = max(lift_dwell_penalty, -1.0)
         self.prev_end_pts = end_pts.copy()
         
-        # Compose final reward
-        lifted_centroid_xy_reward_weight = 15.0
-        grounded_centroid_xy_reward_weight = 7.0
-        
         # Hover penalty gating
         lifted_count = int(np.sum(lifted_mask))
         hover_weight = 0.0 if (self.stall_streak < 5 or lifted_count >= 2) else 3.0
@@ -483,17 +484,51 @@ class SingleTensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         if controls is not None:
             if hasattr(self, 'prev_controls') and self.prev_controls is not None:
                 try:
-                    action_smooth_penalty = -0.05 * float(np.sum(np.abs(controls - self.prev_controls)))
+                    action_smooth_penalty = -0.5 * float(np.sum(np.abs(controls - self.prev_controls)))
                 except Exception:
                     action_smooth_penalty = 0.0
             self.prev_controls = controls.copy()
-        action_smooth_penalty = max(action_smooth_penalty, -1.0)
+        action_smooth_penalty = max(action_smooth_penalty, -4.0)
+
+        # Reward rotation of IMU about the x-axis of the IMU
+        # IMU rotation reward: encourage rotation about each rod's local x-axis
+        try:
+            imu_vecs = self._get_IMU_gravity_vectors().reshape(self.n_rods, 3)  # (n_rods, 3)
+            # Angle around local x-axis: rotation of gravity shows up in y (sin) and z (-cos)
+            angles_x = np.arctan2(imu_vecs[:, 1], -imu_vecs[:, 2])  # radians
+
+            # Initialize previous angles if missing
+            if not hasattr(self, 'prev_imu_angles') or self.prev_imu_angles is None:
+                self.prev_imu_angles = angles_x.copy()
+
+            # Angle difference with wrapping to [-pi, pi]
+            d_angles = angles_x - self.prev_imu_angles
+            d_angles = (d_angles + np.pi) % (2.0 * np.pi) - np.pi
+
+            # Angular speed (rad/s)
+            ang_speed = d_angles / max(self.dt, 1e-8)
+
+            # Reward proportional to absolute angular speed, squashed with tanh to keep bounded
+            imu_rotation_reward = float(np.sum(np.tanh(0.5 * np.abs(ang_speed))))
+
+            # Update stored angles for next step
+            self.prev_imu_angles = angles_x.copy()
+        except Exception as e:
+            # On any failure, set zero reward and avoid breaking simulation
+            imu_rotation_reward = 0.0
+            if not hasattr(self, 'prev_imu_angles'):
+                self.prev_imu_angles = None
+
+        # Compose final reward
+        lifted_centroid_xy_reward_weight = 20.0
+        grounded_centroid_xy_reward_weight = 5.0
+        imu_rotation_reward_weight = 10.0
         
         reward_raw = (
             endpoint_height_reward
             + lifted_centroid_xy_reward_weight * lifted_centroid_xy_reward
             + grounded_centroid_xy_reward_weight * grounded_centroid_xy_reward
-            + 30.0 * com_step_progress  # Increased from 24.0 to 30.0
+            + 15.0 * com_step_progress  # Increased from 24.0 to 30.0
             + 10.0 * lifted_swing_reward  # Increased from 7.0 to 10.0
             + stall_penalty
             + resume_bonus
@@ -501,10 +536,11 @@ class SingleTensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
             + hover_weight * hover_term
             + action_smooth_penalty
             + direction_streak_reward
+            + imu_rotation_reward_weight * imu_rotation_reward
         )
         
         # Final reward clipping
-        reward = float(np.clip(reward_raw, -100.0, 100.0))
+        reward = float(np.clip(reward_raw, -200.0, 200.0))
         
         # Update position tracking
         self.prev_pos = robot_pos.copy()

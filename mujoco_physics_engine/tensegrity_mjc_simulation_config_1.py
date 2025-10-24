@@ -14,6 +14,7 @@ import mujoco
 from mujoco import viewer
 
 import glfw  # Required for Viewer
+import time
 
 def debug_print(message, filename="tensegrity_mjc_simulation_config_1.py", debug_enabled=False):
     """Print debug messages with filename prefix if debug is enabled"""
@@ -39,7 +40,8 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
                  controller_ki: float = 0.0,
                  controller_kd: float = 1.0,
                  control_penalty_cap: float = 100.0,
-                 zoom_out_factor: float = 2.0):
+                 zoom_out_factor: float = 2.0,
+                 render_pause: float = 0.01):
         super().__init__(xml_path, visualize, render_size, render_fps)
         self.debug_enabled = debug_enabled
         self.control_penalty_cap = float(control_penalty_cap)
@@ -53,6 +55,7 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         self.n_rods = num_rods
         self.n_cables = self.mjc_model.tendon_stiffness.shape[0]
         self._viewer = None
+        self.render_pause = render_pause
         # NOTE: start here for debugging the zero inputs 09/30/2025
         # self.actuated_ids = (list(range(num_actuated_cables // 2))
         #                      + list(range(self.n_cables // 2, self.n_cables // 2 + num_actuated_cables // 2)))

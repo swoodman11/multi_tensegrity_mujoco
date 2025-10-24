@@ -256,6 +256,10 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
                     self.render()
                     time.sleep(self.render_pause)  # Pause to slow down visualization
 
+            else:
+                # Raise critical error if no target lengths provided
+                raise ValueError("Target lengths must be provided for sim_step.")
+
         ### Reward and Penalty Calculations ###
 
         # Get end points for locomotion reward
@@ -450,12 +454,15 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
                 except Exception:
                     action_smooth_penalty = 0.0
             self.prev_controls = controls.copy()
-        action_smooth_penalty = max(action_smooth_penalty, -2.0)
+        action_smooth_penalty = max(action_smooth_penalty, -4.0)
+
+        # Add in IMU rotation reward
+
         reward_raw = (
             endpoint_height_reward
             + lifted_centroid_xy_reward_weight * lifted_centroid_xy_reward
             + grounded_centroid_xy_reward_weight * grounded_centroid_xy_reward
-            + 24.0 * com_step_progress
+            + 10.0 * com_step_progress
             + 7.0 * lifted_swing_reward
             + velocity_reward
             + stall_penalty
@@ -522,24 +529,24 @@ class TensegrityMuJoCoSimulator(AbstractMuJoCoSimulator):
         
         # Store velocity in sliding window (15 steps = ~1.5 seconds)
         self.velocity_window.append(velocity.copy())
-        if len(self.velocity_window) > 5:
+        if len(self.velocity_window) > 15:
             self.velocity_window.pop(0)
         
         # Calculate heading angle if moving
         if speed > 0.05:  # Minimum speed threshold
             heading_angle = np.arctan2(velocity[1], velocity[0])  # Range: [-π, π]
             self.direction_angles.append(heading_angle)
-            if len(self.direction_angles) > 5:
+            if len(self.direction_angles) > 15:
                 self.direction_angles.pop(0)
         
         # Calculate reward if we have enough history
-        if len(self.velocity_window) >= 2:
+        if len(self.velocity_window) >= 3:
             # Average speed over window
             speeds = [np.linalg.norm(v) for v in self.velocity_window]
             avg_speed = np.mean(speeds)
             
             # Calculate direction consistency
-            if len(self.direction_angles) >= 2:
+            if len(self.direction_angles) >= 3:
                 # Use circular variance for angles
                 angles = np.array(self.direction_angles)
                 
